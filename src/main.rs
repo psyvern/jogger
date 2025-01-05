@@ -533,26 +533,30 @@ impl Component for AppModel {
                             root.close();
                         }
                         EntryAction::Shell(exec, shell, path) => {
-                            let current_dir = &std::env::current_dir().unwrap();
-
                             root.close();
 
                             Command::new(shell.as_deref().unwrap_or("sh"))
                                 .arg("-c")
                                 .arg(exec)
                                 .current_dir(
-                                    path.as_ref().filter(|x| x.exists()).unwrap_or(current_dir),
+                                    path.as_ref()
+                                        .filter(|x| x.exists())
+                                        .unwrap_or(&std::env::current_dir().unwrap()),
                                 )
                                 .exec();
                         }
-                        EntryAction::Command(command) => {
+                        EntryAction::Command(command, path) => {
+                            root.close();
+
                             let mut iter = command.split_whitespace();
                             Command::new(iter.next().unwrap())
                                 .args(iter)
-                                .spawn()
-                                .unwrap();
-
-                            root.close();
+                                .current_dir(
+                                    path.as_ref()
+                                        .filter(|x| x.exists())
+                                        .unwrap_or(&std::env::current_dir().unwrap()),
+                                )
+                                .exec();
                         }
                     }
                 }

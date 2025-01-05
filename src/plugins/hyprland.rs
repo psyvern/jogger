@@ -48,10 +48,10 @@ impl From<&HyprlandClient> for Entry {
             icon: EntryIcon::Name(value.path.clone().unwrap_or("image-missing".to_owned())),
             small_icon: EntryIcon::Name("multitasking-windows".to_owned()),
             sub_entries: HashMap::new(),
-            action: EntryAction::Command(format!(
-                "hyprctl dispatch focuswindow address:{}",
-                value.address
-            )),
+            action: EntryAction::Command(
+                format!("hyprctl dispatch focuswindow address:{}", value.address),
+                None,
+            ),
         }
     }
 }

@@ -25,7 +25,7 @@ pub enum EntryAction {
     Close,
     Copy(String),
     Shell(String, Option<String>, Option<PathBuf>),
-    Command(String),
+    Command(String, Option<PathBuf>),
 }
 
 #[derive(Clone, Debug)]

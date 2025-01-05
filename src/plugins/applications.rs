@@ -119,15 +119,13 @@ impl From<&DesktopEntry> for Entry {
             small_icon: EntryIcon::None,
             sub_entries: value.actions.clone(),
             action: match value.exec.clone() {
-                Some(exec) => EntryAction::Shell(
+                Some(exec) => {
                     if value.terminal {
-                        format!("$TERMINAL_EMULATOR -e {exec}")
+                        EntryAction::Command(format!("ghostty -e {exec}"), value.path.clone())
                     } else {
-                        exec
-                    },
-                    None,
-                    value.path.clone(),
-                ),
+                        EntryAction::Shell(exec, None, value.path.clone())
+                    }
+                }
                 None => EntryAction::Nothing,
             },
         }
