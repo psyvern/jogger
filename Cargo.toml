@@ -1,0 +1,22 @@
+[package]
+name = "jogger"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4.38"
+fend-core = "1.5.5"
+freedesktop-desktop-entry = "0.7.5"
+futures = "0.3.31"
+fuzzy-matcher = "0.3.7"
+gtk = { version = "0.9.4", package = "gtk4", features = [ "v4_16" ] }
+gtk-layer-shell = { version = "0.4.0", package = "gtk4-layer-shell" }
+hyprland = "0.4.0-beta.2"
+itertools = "0.13.0"
+nucleo-matcher = "0.3.1"
+relm4 = "0.9.1"
+rink-core = { version = "0.8.0", features = ["bundle-files"] }
+serde = "1.0.216"
+toml = "0.8.19"
+wl-clipboard-rs = "0.9.1"
+xdg = "2.5.2"

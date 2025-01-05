@@ -1,0 +1,167 @@
+* {
+    color: unset;
+}
+
+placeholder {
+    opacity: 0.5;
+}
+
+window {
+    border-radius: 16px;
+    border: 2px solid #a2c9fe7F;
+}
+
+window,
+row {
+    background-color: #111418;
+}
+
+list {
+    background-color: #111418;
+}
+
+grid {
+    margin: 0 8px 8px 8px;
+}
+
+grid>button {
+    all: unset;
+    padding: 0 8px;
+
+    border-style: solid;
+    border-color: transparent;
+    border-radius: 12px;
+    border-width: 2px;
+}
+
+grid>button.selected,
+grid>button:hover {
+    background-color: #272a2f;
+}
+
+grid>button .icon {
+    -gtk-icon-shadow: 0 0 10px #111418;
+}
+
+grid>button.selected {
+    border-color: #a2c9fe;
+}
+
+row {
+    padding: 12px;
+    margin: 0 8px 8px 8px;
+
+    background-color: transparent;
+
+    border-radius: 12px;
+    border-width: 2px;
+    border-style: solid;
+    border-color: transparent;
+
+    transition-timing-function: ease-in-out;
+    transition-duration: 0.15s;
+    transition-property: background-color;
+    transition-property: border-color;
+}
+
+row:hover {
+    background-color: #272a2f;
+    border-color: transparent;
+}
+
+row.selected,
+row:focus {
+    background-color: #272a2f;
+    border-color: #a2c9fe;
+}
+
+#search_bar {
+    margin: 8px;
+    padding: 6px;
+    border-radius: 12px;
+    background-color: #272a2f;
+}
+
+#search_bar>entry {
+    all: unset;
+
+    margin: 6px;
+    font-size: 15px;
+}
+
+#search_bar.error {
+    background-color: #ffb4ab;
+    color: #690005;
+    caret-color: #690005;
+}
+
+#search_bar>button {
+    all: unset;
+
+    padding: 6px 7.5px;
+    border-radius: 6px;
+}
+
+#search_bar>button:hover {
+    background-color: #111418;
+}
+
+entry.error {
+    background-color: #ffb4ab;
+    color: #690005;
+    caret-color: #690005;
+}
+
+row .icon {
+    -gtk-icon-shadow: 0 0 10px #111418;
+}
+
+.texts {
+    margin-left: 16px;
+}
+
+.grid_name {
+    font-weight: 600;
+    font-size: 15px;
+
+    margin: 4px 0;
+}
+
+.name {
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.description {
+    font-weight: 500;
+    opacity: 0.5;
+    font-size: 15px;
+}
+
+.action {
+    box-shadow: none;
+    margin: 0 64px;
+    font-weight: 500;
+    font-size: 15px;
+
+    background: none;
+    background-color: transparent;
+
+    border-radius: 12px;
+    border-width: 2px;
+    border-style: solid;
+    border-color: transparent;
+
+    transition-timing-function: ease-in-out;
+    transition-duration: 0.15s;
+    transition-property: background-color;
+    transition-property: border-color;
+}
+
+.action:selected,
+.action:focus,
+.action:hover {
+    background-color: #111418;
+    /* background-color: #272a2f; */
+    border-color: #a2c9fe;
+}
