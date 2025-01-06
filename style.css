@@ -9,16 +9,11 @@ placeholder {
 window {
     border-radius: 16px;
     border: 2px solid #a2c9fe7F;
-    background-color: #111418AF;
-}
-
-window,
-row {
-    /* background-color: #111418; */
+    background-color: #111418DF;
 }
 
 list {
-    /* background-color: #111418; */
+    background-color: unset;
 }
 
 grid {
@@ -37,7 +32,7 @@ grid>button {
 
 grid>button.selected,
 grid>button:hover {
-    background-color: #272a2fAF;
+    background-color: #272a2f;
 }
 
 grid>button .icon {
@@ -49,8 +44,6 @@ grid>button.selected {
 }
 
 row {
-    background-color: transparent;
-
     padding: 12px;
     margin: 0 8px 8px 8px;
 
@@ -68,13 +61,13 @@ row {
 }
 
 row:hover {
-    background-color: #272a2fAF;
+    background-color: #272a2f;
     border-color: transparent;
 }
 
 row.selected,
 row:focus {
-    background-color: #272a2fAF;
+    background-color: #272a2f;
     border-color: #a2c9fe;
 }
 
@@ -82,7 +75,7 @@ row:focus {
     margin: 8px;
     padding: 6px;
     border-radius: 12px;
-    background-color: #272a2fAF;
+    background-color: #272a2f;
 }
 
 #search_bar>entry {
