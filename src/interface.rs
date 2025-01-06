@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use gtk::Image;
 
-pub trait Plugin: Debug + Send {
+pub trait Plugin: Debug + Send + Sync {
     fn icon(&self) -> Option<&str> {
         None
     }
@@ -14,9 +14,11 @@ pub trait Plugin: Debug + Send {
         None
     }
 
-    fn search(&mut self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
+    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
         Box::new(std::iter::empty())
     }
+
+    fn select(&self, entry: &Entry) {}
 }
 
 #[derive(Clone, Debug)]
@@ -36,6 +38,7 @@ pub struct Entry {
     pub small_icon: EntryIcon,
     pub sub_entries: HashMap<String, SubEntry>,
     pub action: EntryAction,
+    pub id: String,
 }
 
 #[derive(Clone, Debug, Default)]

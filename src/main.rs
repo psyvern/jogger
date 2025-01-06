@@ -3,8 +3,13 @@ mod plugins;
 mod search_entry;
 
 use futures::Future;
-use std::process::Command;
-use std::{os::unix::process::CommandExt, pin::Pin};
+use itertools::Itertools;
+use std::os::unix::process::CommandExt;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::{pin::Pin, process::Command};
+use tokio::select;
+use tokio_util::sync::CancellationToken;
 
 use gtk::{
     gdk::{self},
@@ -34,7 +39,8 @@ enum GridEntryMsg {
 }
 
 struct GridEntryComponent {
-    entry: Entry,
+    plugin: usize,
+    entry: Rc<Entry>,
     selected: bool,
     grid_size: usize,
 }
@@ -56,7 +62,7 @@ impl Position<GridPosition, DynamicIndex> for GridEntryComponent {
 
 #[relm4::factory]
 impl FactoryComponent for GridEntryComponent {
-    type Init = (Entry, usize);
+    type Init = (usize, Rc<Entry>, usize);
     type Input = GridEntryMsg;
     type Output = DynamicIndex;
     type CommandOutput = ();
@@ -98,9 +104,10 @@ impl FactoryComponent for GridEntryComponent {
 
     fn init_model(value: Self::Init, index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
         Self {
-            entry: value.0,
+            plugin: value.0,
+            entry: value.1,
             selected: index.current_index() == 0,
-            grid_size: value.1,
+            grid_size: value.2,
         }
     }
 
@@ -113,7 +120,8 @@ impl FactoryComponent for GridEntryComponent {
 }
 
 struct ListEntryComponent {
-    entry: Entry,
+    plugin: usize,
+    entry: Rc<Entry>,
     show_actions: bool,
     selected: bool,
 }
@@ -127,7 +135,7 @@ enum EntryMsg {
 
 #[relm4::factory]
 impl FactoryComponent for ListEntryComponent {
-    type Init = Entry;
+    type Init = (usize, Rc<Entry>);
     type Input = EntryMsg;
     type Output = DynamicIndex;
     type CommandOutput = ();
@@ -257,7 +265,8 @@ impl FactoryComponent for ListEntryComponent {
 
     fn init_model(value: Self::Init, index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
         Self {
-            entry: value,
+            plugin: value.0,
+            entry: value.1,
             show_actions: false,
             selected: index.current_index() == 0,
         }
@@ -295,16 +304,24 @@ enum AppMsg {
     Move(MoveDirection),
     ScrollToSelected,
     Close,
+    SearchResults(Vec<(usize, Entry)>),
 }
 
-#[derive(Debug)]
 enum CommandMsg {
     PluginLoaded(Box<dyn Plugin>),
+    PluginSearched(Box<dyn Iterator<Item = Entry> + Send>),
+}
+
+impl std::fmt::Debug for CommandMsg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "nothing")
+    }
 }
 
 struct AppModel {
     query: String,
-    plugins: Vec<Box<dyn Plugin>>,
+    cancellation_token: CancellationToken,
+    plugins: Vec<Arc<dyn Plugin>>,
     selected_plugin: Option<usize>,
     selected_entry: usize,
     list_entries: FactoryVecDeque<ListEntryComponent>,
@@ -394,7 +411,7 @@ impl Component for AppModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         for plugin in plugins {
-            sender.oneshot_command(async move { CommandMsg::PluginLoaded(plugin().await) })
+            sender.oneshot_command(async move { CommandMsg::PluginLoaded(plugin().await) });
         }
 
         let list_entries = FactoryVecDeque::builder()
@@ -424,6 +441,7 @@ impl Component for AppModel {
 
         let model = AppModel {
             query: String::new(),
+            cancellation_token: CancellationToken::new(),
             plugins: vec![],
             selected_plugin: None,
             selected_entry: 0,
@@ -495,20 +513,32 @@ impl Component for AppModel {
                     }
                 };
 
-                let mut list_entries = self.list_entries.guard();
-                list_entries.clear();
-                match self.selected_plugin.and_then(|i| self.plugins.get_mut(i)) {
-                    None => {
-                        for entry in self.plugins.iter_mut().flat_map(|x| x.search(&self.query)) {
-                            list_entries.push_back(entry);
+                self.cancellation_token.cancel();
+
+                self.cancellation_token = CancellationToken::new();
+                let child_token = self.cancellation_token.child_token();
+
+                let plugins = self.plugins.clone();
+                let selected_plugin = self.selected_plugin;
+                let query = self.query.clone();
+                let _sender = sender.clone();
+                tokio::spawn(async move {
+                    select! {
+                        _ = child_token.cancelled() => {}
+                        entries = async {
+                            match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
+                                None => {
+                                    plugins.iter().enumerate().flat_map(|(i, x)| x.search(&query).map(move |x| (i, x))).collect_vec()
+                                }
+                                Some((i, plugin)) => {
+                                    plugin.search(&query).map(|x| (i, x)).collect_vec()
+                                }
+                            }
+                        } => {
+                            sender.input(AppMsg::SearchResults(entries));
                         }
                     }
-                    Some(plugin) => {
-                        for entry in plugin.search(&self.query) {
-                            list_entries.push_back(entry);
-                        }
-                    }
-                }
+                });
             }
             AppMsg::Select(index) => {
                 let entry = if self.use_grid() {
@@ -678,7 +708,28 @@ impl Component for AppModel {
             AppMsg::ClearPrefix => {
                 self.selected_plugin = None;
             }
-            AppMsg::ScrollToSelected => {}
+            AppMsg::ScrollToSelected => {
+                self.list_entries
+                    .get(self.selected_entry)
+                    .and_then(|entry| Some(self.plugins.get(entry.plugin)?.select(&entry.entry)));
+            }
+            AppMsg::SearchResults(entries) => {
+                let mut entries = entries.into_iter().map(|(a, b)| (a, Rc::new(b)));
+
+                if self.query == "" && self.selected_plugin == None && self.grid_entries.is_empty()
+                {
+                    let mut grid_entries = self.grid_entries.guard();
+                    for entry in entries.by_ref().take(self.grid_size * self.grid_size) {
+                        grid_entries.push_back((entry.0, entry.1, self.grid_size));
+                    }
+                }
+
+                let mut list_entries = self.list_entries.guard();
+                list_entries.clear();
+                for entry in entries {
+                    list_entries.push_back(entry);
+                }
+            }
         }
     }
 
@@ -690,20 +741,10 @@ impl Component for AppModel {
     ) {
         match message {
             CommandMsg::PluginLoaded(plugin) => {
-                self.plugins.push(plugin);
+                self.plugins.push(plugin.into());
                 sender.input(AppMsg::Search(self.query.clone()));
-
-                let mut grid_entries = self.grid_entries.guard();
-                grid_entries.clear();
-                for entry in self
-                    .plugins
-                    .iter_mut()
-                    .flat_map(|x| x.search(""))
-                    .take(self.grid_size * self.grid_size)
-                {
-                    grid_entries.push_back((entry, self.grid_size));
-                }
             }
+            CommandMsg::PluginSearched(_) => {}
         }
     }
 }
@@ -721,7 +762,7 @@ fn main() {
             })
         }
         fn fn_3() -> Pin<Box<dyn Future<Output = Box<dyn Plugin>> + Send>> {
-            Box::pin(async { Box::new(plugins::rink::Rink::new().await) as Box<dyn Plugin> })
+            Box::pin(async { Box::new(plugins::math::Math::new().await) as Box<dyn Plugin> })
         }
         fn fn_4() -> Pin<Box<dyn Future<Output = Box<dyn Plugin>> + Send>> {
             Box::pin(async {

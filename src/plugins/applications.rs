@@ -4,10 +4,6 @@ use std::path::PathBuf;
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
 use itertools::Itertools;
-use nucleo_matcher::{
-    pattern::{AtomKind, CaseMatching, Normalization, Pattern},
-    Config, Matcher,
-};
 use xdg::BaseDirectories;
 
 use crate::{interface::EntryIcon, Entry, EntryAction, Plugin, SubEntry};
@@ -128,6 +124,7 @@ impl From<&DesktopEntry> for Entry {
                 }
                 None => EntryAction::Nothing,
             },
+            id: "".to_owned(),
         }
     }
 }
@@ -157,8 +154,10 @@ impl Applications {
 }
 
 impl Plugin for Applications {
-    fn search(&mut self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
+    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
+        // return Box::new(std::iter::empty());
         if query.is_empty() {
+            // return Box::new(std::iter::empty());
             Box::new(
                 self.entries
                     .iter()

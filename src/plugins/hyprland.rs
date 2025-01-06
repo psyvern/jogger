@@ -3,7 +3,8 @@ use fuzzy_matcher::FuzzyMatcher;
 use gtk::glib;
 use hyprland::{
     data::{Clients, Workspace},
-    shared::{Address, HyprData, HyprDataActive},
+    dispatch::Dispatch,
+    shared::{Address, HyprData, HyprDataActive, HyprDataActiveOptional},
 };
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -15,6 +16,13 @@ pub struct Hyprland {
     clients: Vec<HyprlandClient>,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+enum SelectionStatus {
+    Selected,
+    SameWorkspace,
+    None,
+}
+
 #[derive(Debug)]
 struct HyprlandClient {
     title: String,
@@ -24,7 +32,7 @@ struct HyprlandClient {
     workspace: i32,
     position: (i16, i16),
     path: Option<String>,
-    current: bool,
+    selection_status: SelectionStatus,
 }
 
 impl From<&HyprlandClient> for Entry {
@@ -32,10 +40,9 @@ impl From<&HyprlandClient> for Entry {
         Entry {
             name: format!(
                 "{}{}",
-                if value.current {
-                    "<span color=\"#FFAF00\">🞱 </span>"
-                } else {
-                    ""
+                match value.selection_status {
+                    SelectionStatus::None => "",
+                    _ => "<span color=\"#FFAF00\">🞱 </span>",
                 },
                 glib::markup_escape_text(&value.title)
             ),
@@ -52,6 +59,7 @@ impl From<&HyprlandClient> for Entry {
                 format!("hyprctl dispatch focuswindow address:{}", value.address),
                 None,
             ),
+            id: value.address.to_string(),
         }
     }
 }
@@ -78,7 +86,11 @@ impl Hyprland {
             .flat_map(|x| x)
             .collect();
 
-        let current = Workspace::get_active().unwrap().id;
+        let current_workspace = Workspace::get_active().unwrap().id;
+        let current_window = hyprland::data::Client::get_active()
+            .unwrap()
+            .map(|x| x.address)
+            .unwrap_or(Address::new(""));
         let clients = Clients::get().unwrap();
         let clients = clients
             .into_iter()
@@ -94,14 +106,15 @@ impl Hyprland {
                     .map(|(_, x)| x)
                     .and_then(Option::as_deref)
                     .map(|x| x.to_string());
-                // let path = linicon::lookup_icon(x.class.to_lowercase())
-                //     .flat_map(|x| x)
-                //     .sorted_by_cached_key(|x| x.max_size)
-                //     .rev()
-                //     .next()
-                //     .map(|x| x.path);
 
                 HyprlandClient {
+                    selection_status: if &current_window == &x.address {
+                        SelectionStatus::Selected
+                    } else if current_workspace == x.workspace.id {
+                        SelectionStatus::SameWorkspace
+                    } else {
+                        SelectionStatus::None
+                    },
                     title: x.title,
                     class: x.class,
                     app_name: name,
@@ -109,7 +122,6 @@ impl Hyprland {
                     workspace: x.workspace.id,
                     position: x.at,
                     path: icon,
-                    current: current == x.workspace.id,
                 }
             })
             .collect_vec();
@@ -127,12 +139,12 @@ impl Plugin for Hyprland {
         Some("w:")
     }
 
-    fn search(&mut self, query: &str) -> Box<dyn Iterator<Item = crate::interface::Entry> + '_> {
+    fn search(&self, query: &str) -> Box<dyn Iterator<Item = crate::interface::Entry> + '_> {
         if query.is_empty() {
             Box::new(
                 self.clients
                     .iter()
-                    .sorted_by_cached_key(|x| (!x.current, x.workspace, x.position))
+                    .sorted_by_cached_key(|x| (x.selection_status, x.workspace, x.position))
                     .map(Entry::from),
             )
         } else {
@@ -165,5 +177,12 @@ impl Plugin for Hyprland {
                     .map(|(_, x)| Entry::from(x)),
             )
         }
+    }
+
+    fn select(&self, entry: &Entry) {
+        Dispatch::call(hyprland::dispatch::DispatchType::FocusWindow(
+            hyprland::dispatch::WindowIdentifier::Address(Address::new(entry.id.clone())),
+        ))
+        .unwrap();
     }
 }

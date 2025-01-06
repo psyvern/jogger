@@ -27,7 +27,7 @@ impl Plugin for Commands {
         Some(">")
     }
 
-    fn search(&mut self, query: &str) -> Box<dyn Iterator<Item = crate::interface::Entry> + '_> {
+    fn search(&self, query: &str) -> Box<dyn Iterator<Item = crate::interface::Entry>> {
         Box::new(std::iter::once(Entry {
             name: format!("<tt>{}</tt>", query.trim()),
             description: self.shell.as_ref().map(|x| format!("<tt>{x}</tt>")),
@@ -35,6 +35,7 @@ impl Plugin for Commands {
             small_icon: EntryIcon::None,
             action: EntryAction::Shell(query.trim().into(), self.shell.clone(), None),
             sub_entries: HashMap::new(),
+            id: "".to_owned(),
         }))
     }
 }
