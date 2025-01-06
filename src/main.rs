@@ -351,6 +351,7 @@ impl Component for AppModel {
             set_default_height: 720,
 
             init_layer_shell: (),
+            set_namespace: "jogger",
             set_layer: Layer::Overlay,
             set_keyboard_mode: KeyboardMode::Exclusive,
 

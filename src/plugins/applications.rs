@@ -117,7 +117,8 @@ impl From<&DesktopEntry> for Entry {
             action: match value.exec.clone() {
                 Some(exec) => {
                     if value.terminal {
-                        EntryAction::Command(format!("ghostty -e {exec}"), value.path.clone())
+                        let term = std::env::var("TERMINAL_EMULATOR").unwrap_or("xterm".to_owned());
+                        EntryAction::Command(format!("{term} -e {exec}"), value.path.clone())
                     } else {
                         EntryAction::Shell(exec, None, value.path.clone())
                     }
