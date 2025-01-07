@@ -305,6 +305,7 @@ enum AppMsg {
     ScrollToSelected,
     Close,
     SearchResults(Vec<(usize, Entry)>),
+    PluginLoaded(Box<dyn Plugin>),
 }
 
 enum CommandMsg {
@@ -322,6 +323,7 @@ struct AppModel {
     query: String,
     cancellation_token: CancellationToken,
     plugins: Vec<Arc<dyn Plugin>>,
+    plugins_size: usize,
     selected_plugin: Option<usize>,
     selected_entry: usize,
     list_entries: FactoryVecDeque<ListEntryComponent>,
@@ -411,10 +413,6 @@ impl Component for AppModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        for plugin in plugins {
-            sender.oneshot_command(async move { CommandMsg::PluginLoaded(plugin().await) });
-        }
-
         let list_entries = FactoryVecDeque::builder()
             .launch(gtk::ListBox::default())
             .forward(sender.input_sender(), |index: DynamicIndex| {
@@ -444,6 +442,7 @@ impl Component for AppModel {
             query: String::new(),
             cancellation_token: CancellationToken::new(),
             plugins: vec![],
+            plugins_size: plugins.len(),
             selected_plugin: None,
             selected_entry: 0,
             list_entries,
@@ -455,6 +454,20 @@ impl Component for AppModel {
         let entries = model.list_entries.widget();
         let entries_grid = model.grid_entries.widget();
         let widgets = view_output!();
+
+        tokio::spawn(async move {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            for plugin in plugins {
+                sender.input(AppMsg::PluginLoaded(plugin().await));
+            }
+        });
+
+        // for plugin in plugins {
+        //     sender.oneshot_command(async move {
+        //         std::thread::sleep(std::time::Duration::from_secs(1));
+        //         CommandMsg::PluginLoaded(plugin().await)
+        //     });
+        // }
 
         ComponentParts { model, widgets }
     }
@@ -731,6 +744,12 @@ impl Component for AppModel {
                     list_entries.push_back(entry);
                 }
             }
+            AppMsg::PluginLoaded(plugin) => {
+                self.plugins.push(plugin.into());
+                if self.plugins.len() == self.plugins_size {
+                    sender.input(AppMsg::Search(self.query.clone()));
+                }
+            }
         }
     }
 
@@ -743,7 +762,9 @@ impl Component for AppModel {
         match message {
             CommandMsg::PluginLoaded(plugin) => {
                 self.plugins.push(plugin.into());
-                sender.input(AppMsg::Search(self.query.clone()));
+                if self.plugins.len() == self.plugins_size {
+                    sender.input(AppMsg::Search(self.query.clone()));
+                }
             }
             CommandMsg::PluginSearched(_) => {}
         }
