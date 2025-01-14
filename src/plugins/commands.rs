@@ -33,7 +33,7 @@ impl Plugin for Commands {
             description: self.shell.as_ref().map(|x| format!("<tt>{x}</tt>")),
             icon: EntryIcon::Name("terminal".to_owned()),
             small_icon: EntryIcon::None,
-            action: EntryAction::Shell(query.trim().into(), self.shell.clone(), None),
+            action: EntryAction::Shell(query.trim().into(), /* self.shell.clone(), */ None),
             sub_entries: HashMap::new(),
             id: "".to_owned(),
         }))

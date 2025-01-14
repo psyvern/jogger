@@ -3,6 +3,7 @@ mod plugins;
 mod search_entry;
 
 use futures::Future;
+use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use std::os::unix::process::CommandExt;
 use std::rc::Rc;
@@ -576,18 +577,24 @@ impl Component for AppModel {
 
                             root.close();
                         }
-                        EntryAction::Shell(exec, shell, path) => {
+                        EntryAction::Shell(exec, path) => {
                             root.close();
 
-                            Command::new(shell.as_deref().unwrap_or("sh"))
-                                .arg("-c")
-                                .arg(exec)
-                                .current_dir(
-                                    path.as_ref()
-                                        .filter(|x| x.exists())
-                                        .unwrap_or(&std::env::current_dir().unwrap()),
-                                )
-                                .exec();
+                            Dispatch::call(DispatchType::Exec(&match path {
+                                Some(path) => format!("cd {}; {exec}", path.to_string_lossy()),
+                                None => exec.to_owned(),
+                            }))
+                            .unwrap();
+
+                            // Command::new(shell.as_deref().unwrap_or("sh"))
+                            //     .arg("-c")
+                            //     .arg(exec)
+                            //     .current_dir(
+                            //         path.as_ref()
+                            //             .filter(|x| x.exists())
+                            //             .unwrap_or(&std::env::current_dir().unwrap()),
+                            //     )
+                            //     .exec();
                         }
                         EntryAction::Command(command, path) => {
                             root.close();
@@ -601,6 +608,10 @@ impl Component for AppModel {
                                         .unwrap_or(&std::env::current_dir().unwrap()),
                                 )
                                 .exec();
+                        }
+                        EntryAction::HyprctlExec(value) => {
+                            Dispatch::call(DispatchType::Exec(value)).unwrap();
+                            root.close();
                         }
                     }
                 }

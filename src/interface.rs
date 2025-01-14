@@ -26,7 +26,8 @@ pub enum EntryAction {
     Nothing,
     Close,
     Copy(String),
-    Shell(String, Option<String>, Option<PathBuf>),
+    HyprctlExec(String),
+    Shell(String, Option<PathBuf>),
     Command(String, Option<PathBuf>),
 }
 

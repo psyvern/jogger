@@ -77,7 +77,7 @@ impl DesktopEntry {
                                                 exec = exec.replace(field_code, "");
                                             }
                                             // TODO: add other fields
-                                            EntryAction::Shell(exec, None, None)
+                                            EntryAction::Shell(exec, None)
                                         })
                                         .unwrap_or(EntryAction::Nothing),
                                 },
@@ -118,9 +118,9 @@ impl From<&DesktopEntry> for Entry {
                 Some(exec) => {
                     if value.terminal {
                         let term = std::env::var("TERMINAL_EMULATOR").unwrap_or("xterm".to_owned());
-                        EntryAction::Command(format!("{term} -e {exec}"), value.path.clone())
+                        EntryAction::Shell(format!("{term} -e {exec}"), value.path.clone())
                     } else {
-                        EntryAction::Shell(exec, None, value.path.clone())
+                        EntryAction::Shell(exec, value.path.clone())
                     }
                 }
                 None => EntryAction::Nothing,
@@ -156,9 +156,7 @@ impl Applications {
 
 impl Plugin for Applications {
     fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
-        // return Box::new(std::iter::empty());
         if query.is_empty() {
-            // return Box::new(std::iter::empty());
             Box::new(
                 self.entries
                     .iter()
