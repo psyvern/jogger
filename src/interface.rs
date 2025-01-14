@@ -14,11 +14,11 @@ pub trait Plugin: Debug + Send + Sync {
         None
     }
 
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
+    fn search(&self, _query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
         Box::new(std::iter::empty())
     }
 
-    fn select(&self, entry: &Entry) {}
+    fn select(&self, _entry: &Entry) {}
 }
 
 #[derive(Clone, Debug)]

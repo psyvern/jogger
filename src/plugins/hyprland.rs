@@ -83,7 +83,7 @@ impl Hyprland {
                         .map(|x| (x.to_lowercase(), (name, icon))),
                 ]
             })
-            .flat_map(|x| x)
+            .flatten()
             .collect();
 
         let current_workspace = Workspace::get_active().unwrap().id;
@@ -108,7 +108,7 @@ impl Hyprland {
                     .map(|x| x.to_string());
 
                 HyprlandClient {
-                    selection_status: if &current_window == &x.address {
+                    selection_status: if current_window == x.address {
                         SelectionStatus::Selected
                     } else if current_workspace == x.workspace.id {
                         SelectionStatus::SameWorkspace
@@ -162,9 +162,9 @@ impl Plugin for Hyprland {
                     .filter_map(|client| {
                         let mut score = 0;
 
-                        score += 4 * matcher.fuzzy_match(&client.title, &query).unwrap_or(0);
+                        score += 4 * matcher.fuzzy_match(&client.title, query).unwrap_or(0);
 
-                        score += matcher.fuzzy_match(&client.class, &query).unwrap_or(0);
+                        score += matcher.fuzzy_match(&client.class, query).unwrap_or(0);
 
                         if score == 0 {
                             None

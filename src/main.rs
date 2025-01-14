@@ -457,7 +457,6 @@ impl Component for AppModel {
         let widgets = view_output!();
 
         tokio::spawn(async move {
-            std::thread::sleep(std::time::Duration::from_millis(10));
             for plugin in plugins {
                 sender.input(AppMsg::PluginLoaded(plugin().await));
             }
@@ -488,23 +487,24 @@ impl Component for AppModel {
         if scroll {
             let list = &widgets.entries;
 
-            list.row_at_index(self.selected_entry as i32)
+            if let Some(bounds) = list
+                .row_at_index(self.selected_entry as i32)
                 .and_then(|row| row.compute_bounds(list))
-                .map(|bounds| {
-                    let scrolled = &widgets.scrolled_window;
-                    let adj = scrolled.vadjustment();
-                    if f64::from(bounds.y()) < adj.value() {
-                        adj.set_value(bounds.y().into());
-                        scrolled.set_vadjustment(Some(&adj));
-                    } else if f64::from(bounds.y()) + f64::from(bounds.height())
-                        > adj.value() + adj.page_size()
-                    {
-                        adj.set_value(
-                            f64::from(bounds.y()) + f64::from(bounds.height()) - adj.page_size(),
-                        );
-                        scrolled.set_vadjustment(Some(&adj));
-                    }
-                });
+            {
+                let scrolled = &widgets.scrolled_window;
+                let adj = scrolled.vadjustment();
+                if f64::from(bounds.y()) < adj.value() {
+                    adj.set_value(bounds.y().into());
+                    scrolled.set_vadjustment(Some(&adj));
+                } else if f64::from(bounds.y()) + f64::from(bounds.height())
+                    > adj.value() + adj.page_size()
+                {
+                    adj.set_value(
+                        f64::from(bounds.y()) + f64::from(bounds.height()) - adj.page_size(),
+                    );
+                    scrolled.set_vadjustment(Some(&adj));
+                }
+            }
         }
     }
 
@@ -519,7 +519,7 @@ impl Component for AppModel {
                         .plugins
                         .iter()
                         .enumerate()
-                        .find(|(_, plugin)| plugin.prefix().is_some_and(|x| x == &self.query));
+                        .find(|(_, plugin)| plugin.prefix().is_some_and(|x| x == self.query));
 
                     if plugin.is_some() {
                         self.search_entry.widget().set_text("");
@@ -736,12 +736,17 @@ impl Component for AppModel {
             AppMsg::ScrollToSelected => {
                 self.list_entries
                     .get(self.selected_entry)
-                    .and_then(|entry| Some(self.plugins.get(entry.plugin)?.select(&entry.entry)));
+                    .and_then(|entry| {
+                        self.plugins.get(entry.plugin)?.select(&entry.entry);
+                        Some(())
+                    });
             }
             AppMsg::SearchResults(entries) => {
                 let mut entries = entries.into_iter().map(|(a, b)| (a, Rc::new(b)));
 
-                if self.query == "" && self.selected_plugin == None && self.grid_entries.is_empty()
+                if self.query.is_empty()
+                    && self.selected_plugin.is_none()
+                    && self.grid_entries.is_empty()
                 {
                     let mut grid_entries = self.grid_entries.guard();
                     for entry in entries.by_ref().take(self.grid_size * self.grid_size) {

@@ -179,18 +179,18 @@ impl Plugin for Applications {
                     .filter_map(|entry| {
                         let mut score = 0;
 
-                        score += 4 * matcher.fuzzy_match(&entry.name, &query).unwrap_or(0);
+                        score += 4 * matcher.fuzzy_match(&entry.name, query).unwrap_or(0);
 
                         if let Some(ref description) = entry.description {
-                            score += 2 * matcher.fuzzy_match(description, &query).unwrap_or(0);
+                            score += 2 * matcher.fuzzy_match(description, query).unwrap_or(0);
                         }
 
                         for category in entry.categories.iter() {
-                            score += matcher.fuzzy_match(category, &query).unwrap_or(0);
+                            score += matcher.fuzzy_match(category, query).unwrap_or(0);
                         }
 
                         for keyword in entry.keywords.iter() {
-                            score += matcher.fuzzy_match(keyword, &query).unwrap_or(0);
+                            score += matcher.fuzzy_match(keyword, query).unwrap_or(0);
                         }
 
                         if score == 0 {

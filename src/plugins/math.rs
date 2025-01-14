@@ -49,7 +49,7 @@ impl Plugin for Math {
                             if x.string() == "approx. " {
                                 0xFFFFFF7F_u32
                             } else {
-                                0xa2c9feFF
+                                0xA2C9FEFF
                             },
                             x.string()
                         )
