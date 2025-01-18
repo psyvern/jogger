@@ -2,12 +2,18 @@ pub mod interface;
 mod plugins;
 mod search_entry;
 
+use dbus::channel::MatchingReceiver;
+use dbus::message::MatchRule;
+use dbus_crossroads::Crossroads;
 use futures::Future;
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
+use relm4::prelude::{AsyncComponent, AsyncComponentParts};
+use relm4::AsyncComponentSender;
 use std::os::unix::process::CommandExt;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{pin::Pin, process::Command};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
@@ -28,8 +34,7 @@ use interface::{Entry, EntryAction, Plugin, SubEntry};
 use relm4::{
     factory::{positions::GridPosition, Position},
     prelude::{DynamicIndex, FactoryComponent, FactoryVecDeque},
-    Component, ComponentController, ComponentParts, ComponentSender, Controller, FactorySender,
-    RelmApp, RelmWidgetExt,
+    Component, ComponentController, Controller, FactorySender, RelmApp, RelmWidgetExt,
 };
 use search_entry::{SearchEntryModel, SearchEntryMsg};
 
@@ -305,14 +310,12 @@ enum AppMsg {
     Move(MoveDirection),
     ScrollToSelected,
     Close,
+    Open,
     SearchResults(Vec<(usize, Entry)>),
     PluginLoaded(Box<dyn Plugin>),
 }
 
-enum CommandMsg {
-    PluginLoaded(Box<dyn Plugin>),
-    PluginSearched(Box<dyn Iterator<Item = Entry> + Send>),
-}
+enum CommandMsg {}
 
 impl std::fmt::Debug for CommandMsg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -331,6 +334,7 @@ struct AppModel {
     grid_entries: FactoryVecDeque<GridEntryComponent>,
     grid_size: usize,
     search_entry: Controller<SearchEntryModel>,
+    visible: bool,
 }
 
 impl AppModel {
@@ -339,8 +343,8 @@ impl AppModel {
     }
 }
 
-#[relm4::component]
-impl Component for AppModel {
+#[relm4::component(async)]
+impl AsyncComponent for AppModel {
     type Input = AppMsg;
     type Output = ();
     type CommandOutput = CommandMsg;
@@ -352,6 +356,8 @@ impl Component for AppModel {
             set_title: Some("Jogger"),
             set_default_width: 720,
             set_default_height: 720,
+            #[watch]
+            set_visible: model.visible,
 
             init_layer_shell: (),
             set_namespace: "jogger",
@@ -409,11 +415,11 @@ impl Component for AppModel {
         }
     }
 
-    fn init(
+    async fn init(
         plugins: Self::Init,
         root: Self::Root,
-        sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
+        sender: AsyncComponentSender<Self>,
+    ) -> AsyncComponentParts<Self> {
         let list_entries = FactoryVecDeque::builder()
             .launch(gtk::ListBox::default())
             .forward(sender.input_sender(), |index: DynamicIndex| {
@@ -450,38 +456,62 @@ impl Component for AppModel {
             grid_entries,
             grid_size,
             search_entry,
+            visible: false,
         };
 
         let entries = model.list_entries.widget();
         let entries_grid = model.grid_entries.widget();
         let widgets = view_output!();
 
+        let _sender = sender.clone();
+        tokio::spawn(async move {
+            let (resource, c) = dbus_tokio::connection::new_session_sync().unwrap();
+            let mut cr = Crossroads::new();
+            let token = cr.register("com.psyvern.jogger", move |b| {
+                b.method("ShowWindow", (), ("result",), move |_, _, (): ()| {
+                    _sender.clone().input(AppMsg::Open);
+                    Ok(("yea boi",))
+                });
+            });
+            cr.insert("/com/psyvern/jogger", &[token], ());
+            c.start_receive(
+                MatchRule::new_method_call(),
+                Box::new(move |msg, conn| {
+                    cr.handle_message(msg, conn).unwrap();
+                    true
+                }),
+            );
+
+            let _handle = tokio::spawn(async {
+                let err = resource.await;
+                panic!("Lost connection to D-Bus: {}", err);
+            });
+
+            c.request_name("com.psyvern.jogger.jogger", false, true, false)
+                .await
+                .unwrap();
+
+            std::future::pending::<()>().await;
+        });
         tokio::spawn(async move {
             for plugin in plugins {
                 sender.input(AppMsg::PluginLoaded(plugin().await));
             }
         });
 
-        // for plugin in plugins {
-        //     sender.oneshot_command(async move {
-        //         std::thread::sleep(std::time::Duration::from_secs(1));
-        //         CommandMsg::PluginLoaded(plugin().await)
-        //     });
-        // }
-
-        ComponentParts { model, widgets }
+        AsyncComponentParts { model, widgets }
     }
 
-    fn update_with_view(
+    async fn update_with_view(
         &mut self,
         widgets: &mut Self::Widgets,
         message: Self::Input,
-        sender: ComponentSender<Self>,
+        sender: AsyncComponentSender<Self>,
         root: &Self::Root,
     ) {
         let scroll = matches!(message, AppMsg::ScrollToSelected);
 
-        self.update(message, sender.clone(), root);
+        self.update(message, sender.clone(), root).await;
         self.update_view(widgets, sender);
 
         if scroll {
@@ -508,7 +538,12 @@ impl Component for AppModel {
         }
     }
 
-    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
+    async fn update(
+        &mut self,
+        message: Self::Input,
+        sender: AsyncComponentSender<Self>,
+        root: &Self::Root,
+    ) {
         match message {
             AppMsg::Search(query) => {
                 self.selected_entry = 0;
@@ -617,7 +652,15 @@ impl Component for AppModel {
                 }
             }
             AppMsg::Close => {
-                root.close();
+                self.visible = false;
+                self.search_entry.widget().set_text("");
+                self.cancellation_token = CancellationToken::new();
+                self.selected_plugin = None;
+                self.selected_entry = 0;
+                self.visible = false;
+            }
+            AppMsg::Open => {
+                self.visible = true;
             }
             AppMsg::Move(direction) => {
                 let use_grid = self.use_grid();
@@ -768,26 +811,26 @@ impl Component for AppModel {
             }
         }
     }
-
-    fn update_cmd(
-        &mut self,
-        message: Self::CommandOutput,
-        sender: ComponentSender<Self>,
-        root: &Self::Root,
-    ) {
-        match message {
-            CommandMsg::PluginLoaded(plugin) => {
-                self.plugins.push(plugin.into());
-                if self.plugins.len() == self.plugins_size {
-                    sender.input(AppMsg::Search(self.query.clone()));
-                }
-            }
-            CommandMsg::PluginSearched(_) => {}
-        }
-    }
 }
 
 fn main() {
+    if std::env::args().contains(&"--show".to_string()) {
+        let conn = dbus::blocking::Connection::new_session().unwrap();
+
+        let proxy = conn.with_proxy(
+            "com.psyvern.jogger.jogger",
+            "/com/psyvern/jogger",
+            Duration::from_millis(5000),
+        );
+
+        let (has_owner,): (String,) = proxy
+            .method_call("com.psyvern.jogger", "ShowWindow", ())
+            .unwrap();
+
+        println!("has_owner: {has_owner}");
+        return;
+    }
+
     let plugins = {
         fn fn_1() -> Pin<Box<dyn Future<Output = Box<dyn Plugin>> + Send>> {
             Box::pin(async {
@@ -824,5 +867,6 @@ fn main() {
         gtk::STYLE_PROVIDER_PRIORITY_USER,
     );
 
-    app.run::<AppModel>(plugins);
+    app.run_async::<AppModel>(plugins);
+    // app.run::<AppModel>(plugins);
 }
