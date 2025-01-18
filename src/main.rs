@@ -542,7 +542,7 @@ impl AsyncComponent for AppModel {
         &mut self,
         message: Self::Input,
         sender: AsyncComponentSender<Self>,
-        root: &Self::Root,
+        _: &Self::Root,
     ) {
         match message {
             AppMsg::Search(query) => {
@@ -600,7 +600,7 @@ impl AsyncComponent for AppModel {
                 if let Some(entry) = entry {
                     match &entry.action {
                         EntryAction::Nothing => {}
-                        EntryAction::Close => root.close(),
+                        EntryAction::Close => sender.input(AppMsg::Close),
                         EntryAction::Copy(value) => {
                             let mut opts = wl_clipboard_rs::copy::Options::new();
                             opts.foreground(true);
@@ -610,10 +610,10 @@ impl AsyncComponent for AppModel {
                             )
                             .expect("Failed to serve copy bytes");
 
-                            root.close();
+                            sender.input(AppMsg::Close);
                         }
                         EntryAction::Shell(exec, path) => {
-                            root.close();
+                            sender.input(AppMsg::Close);
 
                             Dispatch::call(DispatchType::Exec(&match path {
                                 Some(path) => format!("cd {}; {exec}", path.to_string_lossy()),
@@ -632,7 +632,7 @@ impl AsyncComponent for AppModel {
                             //     .exec();
                         }
                         EntryAction::Command(command, path) => {
-                            root.close();
+                            sender.input(AppMsg::Close);
 
                             let mut iter = command.split_whitespace();
                             Command::new(iter.next().unwrap())
@@ -646,7 +646,7 @@ impl AsyncComponent for AppModel {
                         }
                         EntryAction::HyprctlExec(value) => {
                             Dispatch::call(DispatchType::Exec(value)).unwrap();
-                            root.close();
+                            sender.input(AppMsg::Close);
                         }
                     }
                 }
