@@ -13,6 +13,7 @@ use crate::interface::{Entry, EntryAction, EntryIcon, Plugin};
 
 #[derive(Debug)]
 pub struct Hyprland {
+    entries: HashMap<String, (Option<String>, Option<String>)>,
     clients: Vec<HyprlandClient>,
 }
 
@@ -86,7 +87,21 @@ impl Hyprland {
             .flatten()
             .collect();
 
-        let current_workspace = Workspace::get_active().unwrap().id;
+        let mut plugin = Self {
+            entries,
+            clients: Vec::new(),
+        };
+        plugin.reload();
+        plugin
+    }
+}
+
+impl Plugin for Hyprland {
+    fn reload(&mut self) {
+        let Ok(current_workspace) = Workspace::get_active() else {
+            return;
+        };
+        let current_workspace = current_workspace.id;
         let current_window = hyprland::data::Client::get_active()
             .unwrap()
             .map(|x| x.address)
@@ -95,7 +110,7 @@ impl Hyprland {
         let clients = clients
             .into_iter()
             .map(|x| {
-                let data = entries.get(&x.class.to_lowercase());
+                let data = self.entries.get(&x.class.to_lowercase());
 
                 let name = data
                     .map(|(x, _)| x)
@@ -126,11 +141,9 @@ impl Hyprland {
             })
             .collect_vec();
 
-        Self { clients }
+        self.clients = clients;
     }
-}
 
-impl Plugin for Hyprland {
     fn icon(&self) -> Option<&str> {
         Some("multitasking-windows")
     }

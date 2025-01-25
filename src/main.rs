@@ -8,6 +8,7 @@ use dbus_crossroads::Crossroads;
 use futures::Future;
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
+use parking_lot::RwLock;
 use relm4::prelude::{AsyncComponent, AsyncComponentParts};
 use relm4::AsyncComponentSender;
 use std::os::unix::process::CommandExt;
@@ -326,7 +327,7 @@ impl std::fmt::Debug for CommandMsg {
 struct AppModel {
     query: String,
     cancellation_token: CancellationToken,
-    plugins: Vec<Arc<dyn Plugin>>,
+    plugins: Arc<RwLock<Vec<Box<dyn Plugin>>>>,
     plugins_size: usize,
     selected_plugin: Option<usize>,
     selected_entry: usize,
@@ -379,9 +380,13 @@ impl AsyncComponent for AppModel {
                         Image {
                             #[watch]
                             set_icon_name: Some(model.selected_plugin
-                                .and_then(|index| model.plugins.get(index))
-                                .and_then(|plugin| plugin.icon())
-                                .unwrap_or("edit-find"))
+                                .and_then(|index| {
+                                    let plugin = model.plugins.read();
+                                    Some(plugin.get(index)?.icon()?.to_owned())
+                                })
+                                // .and_then(|plugin| plugin.icon())
+                                .unwrap_or("edit-find".to_string()))
+                            .as_deref()
                         },
                     },
 
@@ -448,7 +453,7 @@ impl AsyncComponent for AppModel {
         let model = AppModel {
             query: String::new(),
             cancellation_token: CancellationToken::new(),
-            plugins: vec![],
+            plugins: Arc::new(RwLock::new(Vec::new())),
             plugins_size: plugins.len(),
             selected_plugin: None,
             selected_entry: 0,
@@ -550,8 +555,8 @@ impl AsyncComponent for AppModel {
                 self.query = query;
 
                 if self.selected_plugin.is_none() {
-                    let plugin = self
-                        .plugins
+                    let plugin = self.plugins.read();
+                    let plugin = plugin
                         .iter()
                         .enumerate()
                         .find(|(_, plugin)| plugin.prefix().is_some_and(|x| x == self.query));
@@ -571,18 +576,18 @@ impl AsyncComponent for AppModel {
                 let plugins = self.plugins.clone();
                 let selected_plugin = self.selected_plugin;
                 let query = self.query.clone();
-                let _sender = sender.clone();
                 tokio::spawn(async move {
                     select! {
                         _ = child_token.cancelled() => {}
                         entries = async {
+                            let plugins = plugins.read();
                             match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
-                                None => {
-                                    plugins.iter().enumerate().flat_map(|(i, x)| x.search(&query).map(move |x| (i, x))).collect_vec()
-                                }
-                                Some((i, plugin)) => {
-                                    plugin.search(&query).map(|x| (i, x)).collect_vec()
-                                }
+                                None => plugins
+                                    .iter()
+                                    .enumerate()
+                                    .flat_map(|(i, x)| x.search(&query).map(move |x| (i, x)))
+                                    .collect_vec(),
+                                Some((i, plugin)) => plugin.search(&query).map(|x| (i, x)).collect_vec(),
                             }
                         } => {
                             sender.input(AppMsg::SearchResults(entries));
@@ -661,6 +666,10 @@ impl AsyncComponent for AppModel {
             }
             AppMsg::Open => {
                 self.visible = true;
+
+                for plugin in self.plugins.write().iter_mut() {
+                    plugin.reload();
+                }
             }
             AppMsg::Move(direction) => {
                 let use_grid = self.use_grid();
@@ -780,7 +789,7 @@ impl AsyncComponent for AppModel {
                 self.list_entries
                     .get(self.selected_entry)
                     .and_then(|entry| {
-                        self.plugins.get(entry.plugin)?.select(&entry.entry);
+                        self.plugins.read().get(entry.plugin)?.select(&entry.entry);
                         Some(())
                     });
             }
@@ -804,8 +813,9 @@ impl AsyncComponent for AppModel {
                 }
             }
             AppMsg::PluginLoaded(plugin) => {
-                self.plugins.push(plugin.into());
-                if self.plugins.len() == self.plugins_size {
+                let mut plugins = self.plugins.write();
+                plugins.push(plugin);
+                if plugins.len() == self.plugins_size {
                     sender.input(AppMsg::Search(self.query.clone()));
                 }
             }

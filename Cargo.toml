@@ -17,6 +17,7 @@ gtk-layer-shell = { version = "0.4.0", package = "gtk4-layer-shell" }
 hyprland = "0.4.0-beta.2"
 itertools = "0.13.0"
 nucleo-matcher = "0.3.1"
+parking_lot = { version = "0.12.3", features = ["arc_lock"] }
 relm4 = "0.9.1"
 serde = "1.0.216"
 tokio = { version = "1.42.0", features = ["time"] }
