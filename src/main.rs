@@ -310,8 +310,9 @@ enum AppMsg {
     ClearPrefix,
     Move(MoveDirection),
     ScrollToSelected,
-    Close,
-    Open,
+    Show,
+    Hide,
+    Toggle,
     SearchResults(Vec<(usize, Entry)>),
     PluginLoaded(Box<dyn Plugin>),
 }
@@ -447,7 +448,7 @@ impl AsyncComponent for AppModel {
                     SearchEntryMsg::Move(direction) => AppMsg::Move(direction),
                     SearchEntryMsg::Select => AppMsg::SelectSelected,
                     SearchEntryMsg::UnselectPlugin => AppMsg::ClearPrefix,
-                    SearchEntryMsg::Close => AppMsg::Close,
+                    SearchEntryMsg::Close => AppMsg::Hide,
                 });
 
         let model = AppModel {
@@ -473,9 +474,16 @@ impl AsyncComponent for AppModel {
             let (resource, c) = dbus_tokio::connection::new_session_sync().unwrap();
             let mut cr = Crossroads::new();
             let token = cr.register("com.psyvern.jogger", move |b| {
-                b.method("ShowWindow", (), ("result",), move |_, _, (): ()| {
-                    _sender.clone().input(AppMsg::Open);
-                    Ok(("yea boi",))
+                let sender = _sender.clone();
+                b.method("ShowWindow", (), ("status",), move |_, _, (): ()| {
+                    sender.input(AppMsg::Show);
+                    Ok((true,))
+                });
+
+                let sender = _sender.clone();
+                b.method("ToggleWindow", (), ("status",), move |_, _, (): ()| {
+                    sender.input(AppMsg::Toggle);
+                    Ok((true,))
                 });
             });
             cr.insert("/com/psyvern/jogger", &[token], ());
@@ -605,7 +613,7 @@ impl AsyncComponent for AppModel {
                 if let Some(entry) = entry {
                     match &entry.action {
                         EntryAction::Nothing => {}
-                        EntryAction::Close => sender.input(AppMsg::Close),
+                        EntryAction::Close => sender.input(AppMsg::Hide),
                         EntryAction::Copy(value) => {
                             let mut opts = wl_clipboard_rs::copy::Options::new();
                             opts.foreground(true);
@@ -615,10 +623,10 @@ impl AsyncComponent for AppModel {
                             )
                             .expect("Failed to serve copy bytes");
 
-                            sender.input(AppMsg::Close);
+                            sender.input(AppMsg::Hide);
                         }
                         EntryAction::Shell(exec, path) => {
-                            sender.input(AppMsg::Close);
+                            sender.input(AppMsg::Hide);
 
                             Dispatch::call(DispatchType::Exec(&match path {
                                 Some(path) => format!("cd {}; {exec}", path.to_string_lossy()),
@@ -637,7 +645,7 @@ impl AsyncComponent for AppModel {
                             //     .exec();
                         }
                         EntryAction::Command(command, path) => {
-                            sender.input(AppMsg::Close);
+                            sender.input(AppMsg::Hide);
 
                             let mut iter = command.split_whitespace();
                             Command::new(iter.next().unwrap())
@@ -651,26 +659,30 @@ impl AsyncComponent for AppModel {
                         }
                         EntryAction::HyprctlExec(value) => {
                             Dispatch::call(DispatchType::Exec(value)).unwrap();
-                            sender.input(AppMsg::Close);
+                            sender.input(AppMsg::Hide);
                         }
                     }
                 }
             }
-            AppMsg::Close => {
-                self.visible = false;
-                self.search_entry.widget().set_text("");
-                self.cancellation_token = CancellationToken::new();
-                self.selected_plugin = None;
-                self.selected_entry = 0;
-                self.visible = false;
-            }
-            AppMsg::Open => {
+            AppMsg::Show => {
                 self.visible = true;
 
                 for plugin in self.plugins.write().iter_mut() {
                     plugin.reload();
                 }
             }
+            AppMsg::Hide => {
+                self.visible = false;
+                self.search_entry.widget().set_text("");
+                self.cancellation_token = CancellationToken::new();
+                self.selected_plugin = None;
+                self.selected_entry = 0;
+            }
+            AppMsg::Toggle => sender.input(if self.visible {
+                AppMsg::Hide
+            } else {
+                AppMsg::Show
+            }),
             AppMsg::Move(direction) => {
                 let use_grid = self.use_grid();
                 if if use_grid {
@@ -833,11 +845,26 @@ fn main() {
             Duration::from_millis(5000),
         );
 
-        let (has_owner,): (String,) = proxy
+        let (_status,): (bool,) = proxy
             .method_call("com.psyvern.jogger", "ShowWindow", ())
             .unwrap();
 
-        println!("has_owner: {has_owner}");
+        return;
+    }
+
+    if std::env::args().contains(&"--toggle".to_string()) {
+        let conn = dbus::blocking::Connection::new_session().unwrap();
+
+        let proxy = conn.with_proxy(
+            "com.psyvern.jogger.jogger",
+            "/com/psyvern/jogger",
+            Duration::from_millis(5000),
+        );
+
+        let (_status,): (bool,) = proxy
+            .method_call("com.psyvern.jogger", "ToggleWindow", ())
+            .unwrap();
+
         return;
     }
 
