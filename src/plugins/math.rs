@@ -51,7 +51,7 @@ impl Plugin for Math {
                             } else {
                                 0xA2C9FEFF
                             },
-                            x.string()
+                            gtk::glib::markup_escape_text(x.string())
                         )
                     } else {
                         x.string().to_owned()

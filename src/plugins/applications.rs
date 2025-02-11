@@ -28,7 +28,7 @@ struct DesktopEntry {
 
 impl DesktopEntry {
     fn new(
-        value: freedesktop_desktop_entry::DesktopEntry<'_>,
+        value: freedesktop_desktop_entry::DesktopEntry,
         locales: &[String],
         frequency: &HashMap<String, u32>,
     ) -> Self {
@@ -137,6 +137,17 @@ pub struct Applications {
 
 impl Applications {
     pub async fn new() -> Self {
+        let mut plugin = Self {
+            entries: Vec::new(),
+        };
+
+        plugin.reload();
+        plugin
+    }
+}
+
+impl Plugin for Applications {
+    fn reload(&mut self) {
         let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
         let frequency_path = base_dirs.place_cache_file("frequency.toml").unwrap();
         let frequency = std::fs::read_to_string(frequency_path).unwrap();
@@ -150,11 +161,9 @@ impl Applications {
             .map(|entry| DesktopEntry::new(entry, &locales, &frequency))
             .collect_vec();
 
-        Self { entries }
+        self.entries = entries;
     }
-}
 
-impl Plugin for Applications {
     fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
         if query.is_empty() {
             Box::new(

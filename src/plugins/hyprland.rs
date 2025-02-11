@@ -67,6 +67,18 @@ impl From<&HyprlandClient> for Entry {
 
 impl Hyprland {
     pub async fn new() -> Self {
+        let mut plugin = Self {
+            entries: HashMap::new(),
+            clients: Vec::new(),
+        };
+
+        plugin.reload();
+        plugin
+    }
+}
+
+impl Plugin for Hyprland {
+    fn reload(&mut self) {
         let locales = get_languages_from_env();
         let entries: HashMap<_, _> = freedesktop_desktop_entry::Iter::new(default_paths())
             .entries(Some(&locales))
@@ -87,17 +99,11 @@ impl Hyprland {
             .flatten()
             .collect();
 
-        let mut plugin = Self {
-            entries,
-            clients: Vec::new(),
-        };
-        plugin.reload();
-        plugin
+        self.entries = entries;
+        self.open();
     }
-}
 
-impl Plugin for Hyprland {
-    fn reload(&mut self) {
+    fn open(&mut self) {
         let Ok(current_workspace) = Workspace::get_active() else {
             return;
         };

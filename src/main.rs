@@ -655,7 +655,8 @@ impl AsyncComponent for AppModel {
                                         .filter(|x| x.exists())
                                         .unwrap_or(&std::env::current_dir().unwrap()),
                                 )
-                                .exec();
+                                .spawn()
+                                .unwrap();
                         }
                         EntryAction::HyprctlExec(value) => {
                             Dispatch::call(DispatchType::Exec(value)).unwrap();
@@ -668,7 +669,7 @@ impl AsyncComponent for AppModel {
                 self.visible = true;
 
                 for plugin in self.plugins.write().iter_mut() {
-                    plugin.reload();
+                    plugin.open();
                 }
             }
             AppMsg::Hide => {
