@@ -151,7 +151,7 @@ impl Plugin for Hyprland {
     }
 
     fn icon(&self) -> Option<&str> {
-        Some("multitasking-windows")
+        Some("window")
     }
 
     fn prefix(&self) -> Option<&str> {

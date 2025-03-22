@@ -108,11 +108,11 @@ impl FactoryComponent for GridEntryComponent {
         }
     }
 
-    fn init_model(value: Self::Init, index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+    fn init_model(value: Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
         Self {
             plugin: value.0,
             entry: value.1,
-            selected: index.current_index() == 0,
+            selected: false,
             grid_size: value.2,
         }
     }
@@ -670,6 +670,8 @@ impl AsyncComponent for AppModel {
                 for plugin in self.plugins.write().iter_mut() {
                     plugin.open();
                 }
+
+                self.grid_entries.send(0, GridEntryMsg::Select);
             }
             AppMsg::Hide => {
                 self.visible = false;
