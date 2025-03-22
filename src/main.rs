@@ -11,7 +11,6 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use relm4::prelude::{AsyncComponent, AsyncComponentParts};
 use relm4::AsyncComponentSender;
-use std::os::unix::process::CommandExt;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,7 +38,7 @@ use relm4::{
 };
 use search_entry::{SearchEntryModel, SearchEntryMsg};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum GridEntryMsg {
     Select,
     Unselect,
@@ -678,6 +677,7 @@ impl AsyncComponent for AppModel {
                 self.cancellation_token = CancellationToken::new();
                 self.selected_plugin = None;
                 self.selected_entry = 0;
+                self.grid_entries.broadcast(GridEntryMsg::Unselect);
             }
             AppMsg::Toggle => sender.input(if self.visible {
                 AppMsg::Hide
