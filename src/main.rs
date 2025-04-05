@@ -9,8 +9,8 @@ use futures::Future;
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
-use relm4::prelude::{AsyncComponent, AsyncComponentParts};
 use relm4::AsyncComponentSender;
+use relm4::prelude::{AsyncComponent, AsyncComponentParts};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,22 +19,22 @@ use tokio::select;
 use tokio_util::sync::CancellationToken;
 
 use gtk::{
+    Align, Box as GBox, Button, Grid, Image, Justification, Label, ListBox, ListBoxRow,
+    Orientation::Vertical,
+    Overlay, Revealer, ScrolledWindow, ToggleButton, Window,
     gdk::{self},
     pango::EllipsizeMode,
     prelude::{
         AdjustmentExt, BoxExt, ButtonExt, EditableExt, GridExt, GtkWindowExt, ListBoxRowExt,
         OrientableExt, ToggleButtonExt, WidgetExt,
     },
-    Align, Box as GBox, Button, Grid, Image, Justification, Label, ListBox, ListBoxRow,
-    Orientation::Vertical,
-    Overlay, Revealer, ScrolledWindow, ToggleButton, Window,
 };
 use gtk_layer_shell::{KeyboardMode, Layer, LayerShell};
 use interface::{Entry, EntryAction, Plugin, SubEntry};
 use relm4::{
-    factory::{positions::GridPosition, Position},
-    prelude::{DynamicIndex, FactoryComponent, FactoryVecDeque},
     Component, ComponentController, Controller, FactorySender, RelmApp, RelmWidgetExt,
+    factory::{Position, positions::GridPosition},
+    prelude::{DynamicIndex, FactoryComponent, FactoryVecDeque},
 };
 use search_entry::{SearchEntryModel, SearchEntryMsg};
 

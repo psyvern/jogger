@@ -2,7 +2,7 @@
   description = "A wayland native, highly customizable runner.";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     systems.url = "github:nix-systems/default-linux";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
@@ -82,7 +82,7 @@
               gobject-introspection
             ];
 
-            RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+            RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
           };
 
           nix = pkgs.mkShellNoCC {

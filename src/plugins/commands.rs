@@ -1,5 +1,5 @@
-use crate::interface::EntryIcon;
 use crate::Plugin;
+use crate::interface::EntryIcon;
 
 use crate::{Entry, EntryAction};
 use std::collections::HashMap;

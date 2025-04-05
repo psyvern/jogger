@@ -1,8 +1,8 @@
 use gtk::{
+    EventControllerKey, PropagationPhase,
     gdk::{Key, ModifierType},
     glib::Propagation,
     prelude::{EditableExt, EntryExt, EventControllerExt, WidgetExt},
-    EventControllerKey, PropagationPhase,
 };
 use relm4::{ComponentParts, ComponentSender, SimpleComponent};
 

@@ -6,7 +6,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
-use crate::{interface::EntryIcon, Entry, EntryAction, Plugin, SubEntry};
+use crate::{Entry, EntryAction, Plugin, SubEntry, interface::EntryIcon};
 
 const FIELD_CODE_LIST: [&str; 13] = [
     "%f", "%F", "%u", "%U", "%d", "%D", "%n", "%N", "%i", "%c", "%k", "%v", "%m",

@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Instant};
 
 use fend_core::SpanKind;
 
-use crate::{interface::EntryIcon, Entry, EntryAction, Plugin};
+use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
 #[derive(Debug)]
 pub struct Math {
