@@ -15,6 +15,7 @@ pub enum SearchEntryMsg {
     Select,
     UnselectPlugin,
     Close,
+    Reload,
 }
 
 pub struct SearchEntryModel {}
@@ -98,6 +99,16 @@ impl SimpleComponent for SearchEntryModel {
                         }
                         Key::Escape => {
                             sender.output(SearchEntryMsg::Close).unwrap();
+                            return Propagation::Stop;
+                        }
+                        Key::r => {
+                            if modifier.contains(ModifierType::CONTROL_MASK) {
+                                sender.output(SearchEntryMsg::Reload).unwrap();
+                                return Propagation::Stop;
+                            }
+                        }
+                        Key::F5 => {
+                            sender.output(SearchEntryMsg::Reload).unwrap();
                             return Propagation::Stop;
                         }
                         _ => {}

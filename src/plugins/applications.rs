@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
+use std::{cmp::Ordering, collections::HashMap};
 
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
@@ -137,21 +137,15 @@ pub struct Applications {
 
 impl Applications {
     pub async fn new() -> Self {
-        let mut plugin = Self {
-            entries: Vec::new(),
-        };
-
-        plugin.reload();
-        plugin
-    }
-}
-
-impl Plugin for Applications {
-    fn reload(&mut self) {
         let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
-        let frequency_path = base_dirs.place_cache_file("frequency.toml").unwrap();
-        let frequency = std::fs::read_to_string(frequency_path).unwrap();
-        let frequency = toml::from_str::<HashMap<String, u32>>(&frequency).unwrap();
+        let frequency = base_dirs.place_config_file("frequency.toml").unwrap();
+        let frequency = if std::fs::exists(&frequency).unwrap() {
+            let frequency = std::fs::read_to_string(frequency).unwrap();
+            toml::from_str::<HashMap<String, u32>>(&frequency).unwrap()
+        } else {
+            std::fs::File::create(frequency).unwrap();
+            HashMap::new()
+        };
 
         let locales = get_languages_from_env();
         let entries = freedesktop_desktop_entry::Iter::new(default_paths())
@@ -161,16 +155,20 @@ impl Plugin for Applications {
             .map(|entry| DesktopEntry::new(entry, &locales, &frequency))
             .collect_vec();
 
-        self.entries = entries;
+        Self { entries }
     }
+}
 
+impl Plugin for Applications {
     fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
         if query.is_empty() {
             Box::new(
                 self.entries
                     .iter()
-                    .sorted_by_cached_key(|entry| entry.frequency)
-                    .rev()
+                    .sorted_by(|a, b| match b.frequency.cmp(&a.frequency) {
+                        Ordering::Equal => a.name.cmp(&b.name),
+                        x => x,
+                    })
                     .map(Into::into),
             )
         } else {

@@ -5,16 +5,17 @@ mod search_entry;
 use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
 use dbus_crossroads::Crossroads;
-use futures::Future;
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use relm4::AsyncComponentSender;
 use relm4::prelude::{AsyncComponent, AsyncComponentParts};
+use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{pin::Pin, process::Command};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 
@@ -209,14 +210,12 @@ impl FactoryComponent for ListEntryComponent {
                         }
                     },
 
-                    // if !self.actions.is_empty() {
-                        ToggleButton {
-                            set_icon_name: "go-down-symbolic",
-                            set_visible: !self.entry.sub_entries.is_empty(),
+                    ToggleButton {
+                        set_icon_name: "go-down-symbolic",
+                        set_visible: !self.entry.sub_entries.is_empty(),
 
-                            connect_toggled[sender] => move |x| sender.input(EntryMsg::ToggleAction(x.is_active()))
-                        }
-                    // }
+                        connect_toggled[sender] => move |x| sender.input(EntryMsg::ToggleAction(x.is_active()))
+                    }
                 },
 
                 Revealer {
@@ -312,6 +311,7 @@ enum AppMsg {
     Show,
     Hide,
     Toggle,
+    Reload,
     SearchResults(Vec<(usize, Entry)>),
     PluginLoaded(Box<dyn Plugin>),
 }
@@ -328,7 +328,7 @@ struct AppModel {
     query: String,
     cancellation_token: CancellationToken,
     plugins: Arc<RwLock<Vec<Box<dyn Plugin>>>>,
-    plugins_size: usize,
+    plugins_fn: Vec<fn() -> BoxFuture<'static, Box<dyn Plugin>>>,
     selected_plugin: Option<usize>,
     selected_entry: usize,
     list_entries: FactoryVecDeque<ListEntryComponent>,
@@ -350,7 +350,7 @@ impl AsyncComponent for AppModel {
     type Output = ();
     type CommandOutput = CommandMsg;
 
-    type Init = Vec<fn() -> Pin<Box<dyn Future<Output = Box<dyn Plugin>> + Send>>>;
+    type Init = Vec<fn() -> BoxFuture<'static, Box<dyn Plugin>>>;
 
     view! {
         Window {
@@ -448,13 +448,14 @@ impl AsyncComponent for AppModel {
                     SearchEntryMsg::Select => AppMsg::SelectSelected,
                     SearchEntryMsg::UnselectPlugin => AppMsg::ClearPrefix,
                     SearchEntryMsg::Close => AppMsg::Hide,
+                    SearchEntryMsg::Reload => AppMsg::Reload,
                 });
 
         let model = AppModel {
             query: String::new(),
             cancellation_token: CancellationToken::new(),
             plugins: Arc::new(RwLock::new(Vec::new())),
-            plugins_size: plugins.len(),
+            plugins_fn: plugins.clone(),
             selected_plugin: None,
             selected_entry: 0,
             list_entries,
@@ -655,6 +656,8 @@ impl AsyncComponent for AppModel {
                                         .unwrap_or(&std::env::current_dir().unwrap()),
                                 )
                                 .spawn()
+                                .unwrap()
+                                .wait()
                                 .unwrap();
                         }
                         EntryAction::HyprctlExec(value) => {
@@ -686,6 +689,16 @@ impl AsyncComponent for AppModel {
             } else {
                 AppMsg::Show
             }),
+            AppMsg::Reload => {
+                self.plugins.write().clear();
+
+                let plugins = self.plugins_fn.clone();
+                tokio::spawn(async move {
+                    for plugin in plugins {
+                        sender.input(AppMsg::PluginLoaded(plugin().await));
+                    }
+                });
+            }
             AppMsg::Move(direction) => {
                 let use_grid = self.use_grid();
                 if if use_grid {
@@ -809,28 +822,30 @@ impl AsyncComponent for AppModel {
                     });
             }
             AppMsg::SearchResults(entries) => {
-                let mut entries = entries.into_iter().map(|(a, b)| (a, Rc::new(b)));
-
-                if self.query.is_empty()
-                    && self.selected_plugin.is_none()
-                    && self.grid_entries.is_empty()
-                {
-                    let mut grid_entries = self.grid_entries.guard();
-                    for entry in entries.by_ref().take(self.grid_size * self.grid_size) {
-                        grid_entries.push_back((entry.0, entry.1, self.grid_size));
-                    }
-                }
-
                 let mut list_entries = self.list_entries.guard();
                 list_entries.clear();
-                for entry in entries {
-                    list_entries.push_back(entry);
+
+                for (a, b) in entries {
+                    list_entries.push_back((a, Rc::new(b)));
                 }
             }
             AppMsg::PluginLoaded(plugin) => {
-                let mut plugins = self.plugins.write();
-                plugins.push(plugin);
-                if plugins.len() == self.plugins_size {
+                self.plugins.write().push(plugin);
+                let plugins = self.plugins.read();
+                if plugins.len() == self.plugins_fn.len() {
+                    let plugins = self.plugins.read();
+                    let entries = plugins
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(i, x)| x.search("").map(move |x| (i, Rc::new(x))))
+                        .take(self.grid_size * self.grid_size);
+
+                    let mut grid_entries = self.grid_entries.guard();
+                    grid_entries.clear();
+                    for entry in entries {
+                        grid_entries.push_back((entry.0, entry.1, self.grid_size));
+                    }
+
                     sender.input(AppMsg::Search(self.query.clone()));
                 }
             }
@@ -871,28 +886,12 @@ fn main() {
         return;
     }
 
-    let plugins = {
-        fn fn_1() -> Pin<Box<dyn Future<Output = Box<dyn Plugin>> + Send>> {
-            Box::pin(async {
-                Box::new(plugins::applications::Applications::new().await) as Box<dyn Plugin>
-            })
-        }
-        fn fn_2() -> Pin<Box<dyn Future<Output = Box<dyn Plugin>> + Send>> {
-            Box::pin(async {
-                Box::new(plugins::hyprland::Hyprland::new().await) as Box<dyn Plugin>
-            })
-        }
-        fn fn_3() -> Pin<Box<dyn Future<Output = Box<dyn Plugin>> + Send>> {
-            Box::pin(async { Box::new(plugins::math::Math::new().await) as Box<dyn Plugin> })
-        }
-        fn fn_4() -> Pin<Box<dyn Future<Output = Box<dyn Plugin>> + Send>> {
-            Box::pin(async {
-                Box::new(plugins::commands::Commands::new().await) as Box<dyn Plugin>
-            })
-        }
-
-        vec![fn_1, fn_2, fn_3, fn_4]
-    };
+    let plugins = plugin_vec![
+        plugins::applications::Applications,
+        plugins::hyprland::Hyprland,
+        plugins::math::Math,
+        plugins::commands::Commands,
+    ];
 
     let app = RelmApp::new("com.psyvern.jogger");
 
@@ -909,4 +908,19 @@ fn main() {
 
     app.run_async::<AppModel>(plugins);
     // app.run::<AppModel>(plugins);
+}
+
+#[macro_export]
+macro_rules! plugin_vec {
+    ( $( $x:path ),+ $(,)? ) => {
+        {
+            let mut temp_vec: Vec<fn() -> BoxFuture<'static, Box<dyn Plugin>>> = Vec::new();
+            $(
+                temp_vec.push(|| async {
+                    Box::new(<$x>::new().await) as Box<dyn Plugin>
+                }.boxed());
+            )*
+            temp_vec
+        }
+    };
 }
