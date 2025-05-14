@@ -1,6 +1,8 @@
+use std::fmt::Write;
 use std::{collections::HashMap, time::Instant};
 
 use fend_core::SpanKind;
+use itertools::Itertools;
 
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
@@ -39,29 +41,45 @@ impl Plugin for Math {
         if val.get_main_result().is_empty() && val.is_unit_type() {
             Box::new(std::iter::empty())
         } else {
-            let string = val
-                .get_main_result_spans()
+            let mut spans = val.get_main_result_spans().collect_vec().into_iter();
+            let first = spans.take_while_ref(|x| x.kind() == SpanKind::Ident).fold(
+                String::new(),
+                |mut output, x| {
+                    let _ = write!(
+                        output,
+                        "<span color=\"#{:06X}\">{}</span>",
+                        if x.string() == "approx. " {
+                            0xA2C9FEu32
+                        } else {
+                            0xFFFFFF
+                        },
+                        gtk::glib::markup_escape_text(x.string())
+                    );
+                    output
+                },
+            );
+            let string: String = spans
+                .take_while_ref(|x| x.kind() != SpanKind::Ident)
                 .filter(|x| !x.string().is_empty())
-                .map(|x| {
-                    if x.kind() == SpanKind::Ident {
-                        format!(
-                            "<span color=\"#{:08X}\">{}</span>",
-                            if x.string() == "approx. " {
-                                0xFFFFFF7F_u32
-                            } else {
-                                0xA2C9FEFF
-                            },
-                            gtk::glib::markup_escape_text(x.string())
-                        )
+                .map(|x| x.string().to_owned())
+                .collect();
+            let units = spans
+                .filter(|x| !x.string().is_empty())
+                .enumerate()
+                .map(|(i, x)| {
+                    // 0xA2C9FEFF
+                    gtk::glib::markup_escape_text(if i == 0 {
+                        x.string().trim_start()
                     } else {
-                        x.string().to_owned()
-                    }
+                        x.string()
+                    })
+                    .to_string()
                 })
                 .collect();
 
             let val = Entry {
-                name: string,
-                description: None,
+                name: format!("{first}{string}"),
+                description: Some(units),
                 icon: EntryIcon::Name("accessories-calculator".to_string()),
                 small_icon: EntryIcon::None,
                 sub_entries: HashMap::new(),

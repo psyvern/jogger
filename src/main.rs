@@ -579,29 +579,32 @@ impl AsyncComponent for AppModel {
                 self.cancellation_token.cancel();
 
                 self.cancellation_token = CancellationToken::new();
-                let child_token = self.cancellation_token.child_token();
+                if !self.query.is_empty() || self.selected_plugin.is_some() {
+                    let child_token = self.cancellation_token.child_token();
 
-                let plugins = self.plugins.clone();
-                let selected_plugin = self.selected_plugin;
-                let query = self.query.clone();
-                tokio::spawn(async move {
-                    select! {
-                        _ = child_token.cancelled() => {}
-                        entries = async {
-                            let plugins = plugins.read();
-                            match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
-                                None => plugins
-                                    .iter()
-                                    .enumerate()
-                                    .flat_map(|(i, x)| x.search(&query).map(move |x| (i, x)))
-                                    .collect_vec(),
-                                Some((i, plugin)) => plugin.search(&query).map(|x| (i, x)).collect_vec(),
+                    let plugins = self.plugins.clone();
+                    let selected_plugin = self.selected_plugin;
+                    let query = self.query.clone();
+                    tokio::spawn(async move {
+                        select! {
+                            _ = child_token.cancelled() => {}
+                            entries = async {
+                                let plugins = plugins.read();
+                                match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
+                                    None => plugins
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(_, x)| x.prefix().is_none())
+                                        .flat_map(|(i, x)| x.search(&query).map(move |x| (i, x)))
+                                        .collect_vec(),
+                                    Some((i, plugin)) => plugin.search(&query).map(|x| (i, x)).collect_vec(),
+                                }
+                            } => {
+                                sender.input(AppMsg::SearchResults(entries));
                             }
-                        } => {
-                            sender.input(AppMsg::SearchResults(entries));
                         }
-                    }
-                });
+                    });
+                }
             }
             AppMsg::Select(index) => {
                 let entry = if self.use_grid() {
@@ -837,6 +840,7 @@ impl AsyncComponent for AppModel {
                     let entries = plugins
                         .iter()
                         .enumerate()
+                        .filter(|(_, x)| x.prefix().is_none())
                         .flat_map(|(i, x)| x.search("").map(move |x| (i, Rc::new(x))))
                         .take(self.grid_size * self.grid_size);
 
