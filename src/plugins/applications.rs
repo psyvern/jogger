@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::BufRead;
 use std::path::PathBuf;
 use std::{cmp::Ordering, collections::HashMap};
 
@@ -31,6 +33,7 @@ impl DesktopEntry {
         value: freedesktop_desktop_entry::DesktopEntry,
         locales: &[String],
         frequency: &HashMap<String, u32>,
+        ignored: &[(String, String)],
     ) -> Self {
         Self {
             name: value.name(locales).unwrap_or("<none>".into()).to_string(),
@@ -58,6 +61,9 @@ impl DesktopEntry {
                 .map(|x| {
                     x.iter()
                         .filter_map(|x| {
+                            if ignored.contains(&(value.id().to_string(), x.to_string())) {
+                                return None;
+                            }
                             if x.is_empty() {
                                 return None;
                             }
@@ -95,13 +101,7 @@ impl DesktopEntry {
                 exec
             }),
             terminal: value.terminal(),
-            frequency: value
-                .path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .and_then(|name| frequency.get(name))
-                .copied()
-                .unwrap_or(0),
+            frequency: frequency.get(value.id()).copied().unwrap_or(0),
         }
     }
 }
@@ -113,7 +113,8 @@ impl From<&DesktopEntry> for Entry {
             description: value.description.clone(),
             icon: EntryIcon::from(value.icon.clone()),
             small_icon: EntryIcon::None,
-            sub_entries: value.actions.clone(),
+            // sub_entries: value.actions.clone(),
+            sub_entries: HashMap::new(),
             action: match value.exec.clone() {
                 Some(exec) => {
                     if value.terminal {
@@ -138,6 +139,26 @@ pub struct Applications {
 impl Applications {
     pub async fn new() -> Self {
         let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
+
+        let ignored = base_dirs.place_config_file("ignored.conf").unwrap();
+        let ignored = if std::fs::exists(&ignored).unwrap() {
+            let ignored = File::open(ignored).unwrap();
+            std::io::BufReader::new(ignored)
+                .lines()
+                .map_while(Result::ok)
+                .flat_map(|x| {
+                    let mut parts = x.splitn(2, '/');
+                    match (parts.next(), parts.next()) {
+                        (Some(a), Some(b)) => Some((a.to_string(), b.to_string())),
+                        _ => None,
+                    }
+                })
+                .collect()
+        } else {
+            std::fs::File::create(ignored).unwrap();
+            vec![]
+        };
+
         let frequency = base_dirs.place_config_file("frequency.toml").unwrap();
         let frequency = if std::fs::exists(&frequency).unwrap() {
             let frequency = std::fs::read_to_string(frequency).unwrap();
@@ -152,7 +173,7 @@ impl Applications {
             .entries(Some(&locales))
             .filter(|entry| !entry.no_display())
             .unique_by(|entry| entry.path.clone())
-            .map(|entry| DesktopEntry::new(entry, &locales, &frequency))
+            .map(|entry| DesktopEntry::new(entry, &locales, &frequency, &ignored))
             .collect_vec();
 
         Self { entries }
@@ -183,33 +204,73 @@ impl Plugin for Applications {
             Box::new(
                 self.entries
                     .iter()
-                    .filter_map(|entry| {
-                        let mut score = 0;
+                    .flat_map(|entry| {
+                        entry
+                            .actions
+                            .iter()
+                            .flat_map(|action| {
+                                let mut score = 0;
 
-                        score += 4 * matcher.fuzzy_match(&entry.name, query).unwrap_or(0);
+                                score +=
+                                    4 * matcher.fuzzy_match(&action.1.name, query).unwrap_or(0);
+                                score += 4 * matcher.fuzzy_match(&entry.name, query).unwrap_or(0);
 
-                        if let Some(ref description) = entry.description {
-                            score += 2 * matcher.fuzzy_match(description, query).unwrap_or(0);
-                        }
+                                for category in entry.categories.iter() {
+                                    score += matcher.fuzzy_match(category, query).unwrap_or(0);
+                                }
 
-                        for category in entry.categories.iter() {
-                            score += matcher.fuzzy_match(category, query).unwrap_or(0);
-                        }
+                                for keyword in entry.keywords.iter() {
+                                    score += matcher.fuzzy_match(keyword, query).unwrap_or(0);
+                                }
 
-                        for keyword in entry.keywords.iter() {
-                            score += matcher.fuzzy_match(keyword, query).unwrap_or(0);
-                        }
+                                if score > 0 {
+                                    Some((
+                                        score,
+                                        Entry {
+                                            name: action.1.name.clone(),
+                                            description: Some(entry.name.clone()),
+                                            icon: EntryIcon::from(entry.icon.clone()),
+                                            small_icon: EntryIcon::Name(
+                                                "plus-circle-filled".into(),
+                                            ),
+                                            sub_entries: HashMap::new(),
+                                            action: action.1.action.clone(),
+                                            id: "".to_owned(),
+                                        },
+                                    ))
+                                } else {
+                                    None
+                                }
+                            })
+                            .chain({
+                                let mut score = 0;
 
-                        if score == 0 {
-                            None
-                        } else {
-                            Some((score, entry))
-                        }
+                                score += 4 * matcher.fuzzy_match(&entry.name, query).unwrap_or(0);
+
+                                if let Some(ref description) = entry.description {
+                                    score +=
+                                        2 * matcher.fuzzy_match(description, query).unwrap_or(0);
+                                }
+
+                                for category in entry.categories.iter() {
+                                    score += matcher.fuzzy_match(category, query).unwrap_or(0);
+                                }
+
+                                for keyword in entry.keywords.iter() {
+                                    score += matcher.fuzzy_match(keyword, query).unwrap_or(0);
+                                }
+
+                                if score > 0 {
+                                    Some((2 * score, Entry::from(entry)))
+                                } else {
+                                    None
+                                }
+                            })
                     })
-                    .sorted_by_cached_key(|(x, entry)| (*x, entry.frequency))
+                    .sorted_by_cached_key(|(x, _)| *x)
                     .rev()
-                    .take(16)
-                    .map(|(_, x)| x.into()),
+                    .take(20)
+                    .map(|(_, x)| x),
             )
         }
     }

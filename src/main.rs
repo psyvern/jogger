@@ -303,11 +303,12 @@ enum MoveDirection {
 #[derive(Debug)]
 enum AppMsg {
     Search(String),
-    Select(usize),
-    SelectSelected,
+    Activate(usize),
+    ActivateSelected,
     ClearPrefix,
     Move(MoveDirection),
     ScrollToSelected,
+    ScrollToStart,
     Show,
     Hide,
     Toggle,
@@ -316,13 +317,8 @@ enum AppMsg {
     PluginLoaded(Box<dyn Plugin>),
 }
 
+#[derive(Debug)]
 enum CommandMsg {}
-
-impl std::fmt::Debug for CommandMsg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "nothing")
-    }
-}
 
 struct AppModel {
     query: String,
@@ -411,7 +407,7 @@ impl AsyncComponent for AppModel {
                             set_can_focus: false,
 
                             connect_row_activated[sender] => move |_, row| {
-                                sender.input(AppMsg::Select(row.index() as usize));
+                                sender.input(AppMsg::Activate(row.index() as usize));
                             },
                         },
                     }
@@ -428,13 +424,13 @@ impl AsyncComponent for AppModel {
         let list_entries = FactoryVecDeque::builder()
             .launch(gtk::ListBox::default())
             .forward(sender.input_sender(), |index: DynamicIndex| {
-                AppMsg::Select(index.current_index())
+                AppMsg::Activate(index.current_index())
             });
 
         let grid_entries = FactoryVecDeque::<GridEntryComponent>::builder()
             .launch(Grid::default())
             .forward(sender.input_sender(), |output| {
-                AppMsg::Select(output.current_index())
+                AppMsg::Activate(output.current_index())
             });
 
         let grid_size = 5;
@@ -445,7 +441,7 @@ impl AsyncComponent for AppModel {
                 .forward(sender.input_sender(), |output| match output {
                     SearchEntryMsg::Change(query) => AppMsg::Search(query),
                     SearchEntryMsg::Move(direction) => AppMsg::Move(direction),
-                    SearchEntryMsg::Select => AppMsg::SelectSelected,
+                    SearchEntryMsg::Activate => AppMsg::ActivateSelected,
                     SearchEntryMsg::UnselectPlugin => AppMsg::ClearPrefix,
                     SearchEntryMsg::Close => AppMsg::Hide,
                     SearchEntryMsg::Reload => AppMsg::Reload,
@@ -523,6 +519,7 @@ impl AsyncComponent for AppModel {
         root: &Self::Root,
     ) {
         let scroll = matches!(message, AppMsg::ScrollToSelected);
+        let scroll2 = matches!(message, AppMsg::ScrollToStart);
 
         self.update(message, sender.clone(), root).await;
         self.update_view(widgets, sender);
@@ -538,16 +535,22 @@ impl AsyncComponent for AppModel {
                 let adj = scrolled.vadjustment();
                 if f64::from(bounds.y()) < adj.value() {
                     adj.set_value(bounds.y().into());
-                    scrolled.set_vadjustment(Some(&adj));
                 } else if f64::from(bounds.y()) + f64::from(bounds.height())
                     > adj.value() + adj.page_size()
                 {
                     adj.set_value(
                         f64::from(bounds.y()) + f64::from(bounds.height()) - adj.page_size(),
                     );
-                    scrolled.set_vadjustment(Some(&adj));
                 }
+                scrolled.set_vadjustment(Some(&adj));
             }
+        }
+
+        if scroll2 {
+            let scrolled = &widgets.scrolled_window;
+            let adj = scrolled.vadjustment();
+            adj.set_value(0.0);
+            scrolled.set_vadjustment(Some(&adj));
         }
     }
 
@@ -606,7 +609,7 @@ impl AsyncComponent for AppModel {
                     });
                 }
             }
-            AppMsg::Select(index) => {
+            AppMsg::Activate(index) => {
                 let entry = if self.use_grid() {
                     self.grid_entries.get(index).map(|x| &x.entry)
                 } else {
@@ -695,12 +698,17 @@ impl AsyncComponent for AppModel {
             AppMsg::Reload => {
                 self.plugins.write().clear();
 
-                let plugins = self.plugins_fn.clone();
-                tokio::spawn(async move {
-                    for plugin in plugins {
-                        sender.input(AppMsg::PluginLoaded(plugin().await));
-                    }
-                });
+                {
+                    let sender = sender.clone();
+                    let plugins = self.plugins_fn.clone();
+                    tokio::spawn(async move {
+                        for plugin in plugins {
+                            sender.input(AppMsg::PluginLoaded(plugin().await));
+                        }
+                    });
+                }
+
+                sender.input(AppMsg::ScrollToStart);
             }
             AppMsg::Move(direction) => {
                 let use_grid = self.use_grid();
@@ -810,8 +818,8 @@ impl AsyncComponent for AppModel {
                     _ => self.selected_entry,
                 };
             }
-            AppMsg::SelectSelected => {
-                sender.input(AppMsg::Select(self.selected_entry));
+            AppMsg::ActivateSelected => {
+                sender.input(AppMsg::Activate(self.selected_entry));
             }
             AppMsg::ClearPrefix => {
                 self.selected_plugin = None;
@@ -824,6 +832,7 @@ impl AsyncComponent for AppModel {
                         Some(())
                     });
             }
+            AppMsg::ScrollToStart => {}
             AppMsg::SearchResults(entries) => {
                 let mut list_entries = self.list_entries.guard();
                 list_entries.clear();
@@ -831,6 +840,7 @@ impl AsyncComponent for AppModel {
                 for (a, b) in entries {
                     list_entries.push_back((a, Rc::new(b)));
                 }
+                sender.input(AppMsg::ScrollToStart);
             }
             AppMsg::PluginLoaded(plugin) => {
                 self.plugins.write().push(plugin);
