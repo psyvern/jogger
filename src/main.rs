@@ -359,7 +359,7 @@ impl AsyncComponent for AppModel {
             init_layer_shell: (),
             set_namespace: "jogger",
             set_layer: Layer::Overlay,
-            set_keyboard_mode: KeyboardMode::Exclusive,
+            set_keyboard_mode: KeyboardMode::OnDemand,
 
             GBox {
                 set_orientation: Vertical,
