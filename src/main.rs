@@ -906,7 +906,7 @@ fn start() {
         plugins::commands::Commands,
     ];
 
-    let app = RelmApp::new("com.psyvern.jogger");
+    let app = RelmApp::new("com.psyvern.jogger").with_args(Vec::new());
 
     // The CSS "magic" happens here.
     let provider = gtk::CssProvider::new();
