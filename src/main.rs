@@ -880,11 +880,7 @@ fn main() {
         let (_status,): (bool,) = proxy
             .method_call("com.psyvern.jogger", "ShowWindow", ())
             .unwrap();
-
-        return;
-    }
-
-    if std::env::args().contains(&"--toggle".to_string()) {
+    } else if std::env::args().contains(&"--toggle".to_string()) {
         let conn = dbus::blocking::Connection::new_session().unwrap();
 
         let proxy = conn.with_proxy(
@@ -893,13 +889,16 @@ fn main() {
             Duration::from_millis(5000),
         );
 
-        let (_status,): (bool,) = proxy
-            .method_call("com.psyvern.jogger", "ToggleWindow", ())
-            .unwrap();
-
-        return;
+        match proxy.method_call::<(bool,), _, _, _>("com.psyvern.jogger", "ToggleWindow", ()) {
+            Ok((_status,)) => {}
+            Err(_) => start(),
+        };
+    } else {
+        start();
     }
+}
 
+fn start() {
     let plugins = plugin_vec![
         plugins::applications::Applications,
         plugins::hyprland::Hyprland,
