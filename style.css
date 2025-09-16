@@ -13,16 +13,18 @@ window {
 }
 
 list {
+    margin-top: 4px;
     background-color: unset;
 }
 
 grid {
-    margin: 0 8px 8px 8px;
+    margin: 0 4px 4px 4px;
 }
 
 grid>button {
     all: unset;
     padding: 0 8px;
+    margin: 4px;
 
     border-style: solid;
     border-color: transparent;
@@ -72,7 +74,7 @@ row:focus {
 }
 
 #search_bar {
-    margin: 8px;
+    margin: 8px 8px 4px 8px;
     padding: 6px;
     border-radius: 12px;
     background-color: #272a2f;

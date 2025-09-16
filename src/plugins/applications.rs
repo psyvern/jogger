@@ -5,6 +5,7 @@ use std::{cmp::Ordering, collections::HashMap};
 
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
@@ -103,6 +104,55 @@ impl DesktopEntry {
             terminal: value.terminal(),
             frequency: frequency.get(value.id()).copied().unwrap_or(0),
         }
+    }
+
+    fn get_score(&self, query: &str, matcher: &SkimMatcherV2) -> Option<(u8, i64, Entry)> {
+        if let Some((score, chars)) = matcher.fuzzy_indices(&self.name, query) {
+            let mut buffer = String::new();
+
+            for (i, c) in self.name.chars().enumerate() {
+                if chars.contains(&i) {
+                    buffer.push_str(&format!("<span color=\"#A2C9FE\">{c}</span>",));
+                } else {
+                    buffer.push(c);
+                }
+            }
+
+            return Some((
+                255,
+                score,
+                Entry::from(&DesktopEntry {
+                    name: buffer,
+                    ..self.clone()
+                }),
+            ));
+        }
+
+        if let Some(ref description) = self.description {
+            if let Some(score) = matcher.fuzzy_match(description, query) {
+                return Some((254, score, self.into()));
+            }
+        }
+
+        for category in self.categories.iter() {
+            let mut score = 0;
+            score += matcher.fuzzy_match(category, query).unwrap_or(0);
+
+            if score > 0 {
+                return Some((253, score, self.into()));
+            }
+        }
+
+        for keyword in self.keywords.iter() {
+            let mut score = 0;
+            score += matcher.fuzzy_match(keyword, query).unwrap_or(0);
+
+            if score > 0 {
+                return Some((252, score, self.into()));
+            }
+        }
+
+        None
     }
 }
 
@@ -225,6 +275,7 @@ impl Plugin for Applications {
 
                                 if score > 0 {
                                     Some((
+                                        0,
                                         score,
                                         Entry {
                                             name: action.1.name.clone(),
@@ -242,35 +293,12 @@ impl Plugin for Applications {
                                     None
                                 }
                             })
-                            .chain({
-                                let mut score = 0;
-
-                                score += 4 * matcher.fuzzy_match(&entry.name, query).unwrap_or(0);
-
-                                if let Some(ref description) = entry.description {
-                                    score +=
-                                        2 * matcher.fuzzy_match(description, query).unwrap_or(0);
-                                }
-
-                                for category in entry.categories.iter() {
-                                    score += matcher.fuzzy_match(category, query).unwrap_or(0);
-                                }
-
-                                for keyword in entry.keywords.iter() {
-                                    score += matcher.fuzzy_match(keyword, query).unwrap_or(0);
-                                }
-
-                                if score > 0 {
-                                    Some((2 * score, Entry::from(entry)))
-                                } else {
-                                    None
-                                }
-                            })
+                            .chain(entry.get_score(query, &matcher))
                     })
-                    .sorted_by_cached_key(|(x, _)| *x)
+                    .sorted_by_cached_key(|(a, b, _)| (*a, *b))
                     .rev()
                     .take(20)
-                    .map(|(_, x)| x),
+                    .map(|(_, _, x)| x),
             )
         }
     }
