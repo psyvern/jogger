@@ -223,6 +223,7 @@ impl Applications {
             .entries(Some(&locales))
             .filter(|entry| !entry.no_display())
             .unique_by(|entry| entry.path.clone())
+            .unique_by(|entry| (entry.id().to_owned(), entry.exec().map(str::to_owned)))
             .map(|entry| DesktopEntry::new(entry, &locales, &frequency, &ignored))
             .collect_vec();
 
