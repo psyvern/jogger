@@ -281,7 +281,7 @@ impl Plugin for Applications {
                                             name: action.1.name.clone(),
                                             description: Some(entry.name.clone()),
                                             icon: EntryIcon::from(entry.icon.clone()),
-                                            small_icon: EntryIcon::Name("embled-added".into()),
+                                            small_icon: EntryIcon::Name("emblem-added".into()),
                                             sub_entries: HashMap::new(),
                                             action: action.1.action.clone(),
                                             id: "".to_owned(),
