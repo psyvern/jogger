@@ -46,7 +46,12 @@ impl DesktopEntry {
             path: value.desktop_entry("Path").map(PathBuf::from),
             categories: value
                 .desktop_entry("Categories")
-                .map(|e| e.split(';').map(|e| e.to_owned()).collect())
+                .map(|e| {
+                    e.trim_end_matches(';')
+                        .split(';')
+                        .map(|e| e.to_owned())
+                        .collect()
+                })
                 .unwrap_or_default(),
             keywords: value
                 .keywords(locales)
@@ -107,59 +112,119 @@ impl DesktopEntry {
     }
 
     fn get_score(&self, query: &str, matcher: &SkimMatcherV2) -> Option<(u8, i64, Entry)> {
-        if let Some((score, chars)) = matcher.fuzzy_indices(&self.name, query) {
-            let mut buffer = String::new();
+        enum Type {
+            Name,
+            Description,
+            Categories,
+            Keywords,
+        }
 
-            for (i, c) in self.name.chars().enumerate() {
-                if chars.contains(&i) {
-                    buffer.push_str(&format!("<span color=\"#A2C9FE\">{c}</span>",));
-                } else {
-                    buffer.push(c);
-                }
-            }
+        let name = matcher
+            .fuzzy_indices(&self.name, query)
+            .map(|y| (y.0, y.1, &self.name));
+        let description = self
+            .description
+            .as_ref()
+            .and_then(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)));
+        let categories = self
+            .categories
+            .iter()
+            .flat_map(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)))
+            .max_by_key(|x| x.0);
+        let keywords = self
+            .keywords
+            .iter()
+            .flat_map(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)))
+            .max_by_key(|x| x.0);
 
-            return Some((
-                255,
+        let res = [
+            (Type::Name, name),
+            (Type::Description, description),
+            (Type::Categories, categories.map(|x| (x.0 / 2, x.1, x.2))),
+            (Type::Keywords, keywords.map(|x| (x.0 / 2, x.1, x.2))),
+        ]
+        .into_iter()
+        .flat_map(|x| x.1.map(|y| (x.0, y.0, y.1, y.2)))
+        .max_by_key(|x| x.1);
+
+        match res {
+            Some((Type::Name, score, indices, string)) => Some((
+                3,
                 score,
                 Entry::from(&DesktopEntry {
-                    name: buffer,
+                    name: color_fuzzy_match(string, indices),
                     ..self.clone()
                 }),
-            ));
+            )),
+            Some((Type::Description, score, indices, string)) => Some((
+                2,
+                score,
+                Entry::from(&DesktopEntry {
+                    description: Some(color_fuzzy_match(string, indices)),
+                    ..self.clone()
+                }),
+            )),
+            Some((Type::Keywords, score, indices, string)) => Some((
+                1,
+                score,
+                Entry::from((self, format!("#{}", color_fuzzy_match(string, indices)))),
+            )),
+            Some((Type::Categories, score, indices, string)) => Some((
+                0,
+                score,
+                Entry::from((self, format!("@{}", color_fuzzy_match(string, indices)))),
+            )),
+            _ => None,
         }
-
-        if let Some(ref description) = self.description {
-            if let Some(score) = matcher.fuzzy_match(description, query) {
-                return Some((254, score, self.into()));
-            }
-        }
-
-        for category in self.categories.iter() {
-            let mut score = 0;
-            score += matcher.fuzzy_match(category, query).unwrap_or(0);
-
-            if score > 0 {
-                return Some((253, score, self.into()));
-            }
-        }
-
-        for keyword in self.keywords.iter() {
-            let mut score = 0;
-            score += matcher.fuzzy_match(keyword, query).unwrap_or(0);
-
-            if score > 0 {
-                return Some((252, score, self.into()));
-            }
-        }
-
-        None
     }
+}
+
+fn color_fuzzy_match(string: &str, indices: Vec<usize>) -> String {
+    let mut buffer = String::new();
+
+    for (i, c) in string.chars().enumerate() {
+        if indices.contains(&i) {
+            buffer.push_str(&format!("<span color=\"#A2C9FE\">{c}</span>",));
+        } else {
+            buffer.push(c);
+        }
+    }
+
+    buffer
 }
 
 impl From<&DesktopEntry> for Entry {
     fn from(value: &DesktopEntry) -> Self {
         Entry {
             name: value.name.clone(),
+            tag: None,
+            description: value.description.clone(),
+            icon: EntryIcon::from(value.icon.clone()),
+            small_icon: EntryIcon::None,
+            // sub_entries: value.actions.clone(),
+            sub_entries: HashMap::new(),
+            action: match value.exec.clone() {
+                Some(exec) => {
+                    if value.terminal {
+                        let term = std::env::var("TERMINAL_EMULATOR").unwrap_or("xterm".to_owned());
+                        EntryAction::Shell(format!("{term} -e {exec}"), value.path.clone())
+                    } else {
+                        EntryAction::Shell(exec, value.path.clone())
+                    }
+                }
+                None => EntryAction::Nothing,
+            },
+            id: "".to_owned(),
+        }
+    }
+}
+
+impl From<(&DesktopEntry, String)> for Entry {
+    fn from(value: (&DesktopEntry, String)) -> Self {
+        let (value, tag) = value;
+        Entry {
+            name: value.name.clone(),
+            tag: Some(tag),
             description: value.description.clone(),
             icon: EntryIcon::from(value.icon.clone()),
             small_icon: EntryIcon::None,
@@ -260,6 +325,7 @@ impl Plugin for Applications {
                             .actions
                             .iter()
                             .flat_map(|action| {
+                                // return None;
                                 let mut score = 0;
 
                                 score +=
@@ -280,6 +346,7 @@ impl Plugin for Applications {
                                         score,
                                         Entry {
                                             name: action.1.name.clone(),
+                                            tag: None,
                                             description: Some(entry.name.clone()),
                                             icon: EntryIcon::from(entry.icon.clone()),
                                             small_icon: EntryIcon::Name("emblem-added".into()),
@@ -294,7 +361,7 @@ impl Plugin for Applications {
                             })
                             .chain(entry.get_score(query, &matcher))
                     })
-                    .sorted_by_cached_key(|(a, b, _)| (*a, *b))
+                    .sorted_by_cached_key(|(a, b, _)| (*b, *a))
                     .rev()
                     .take(20)
                     .map(|(_, _, x)| x),

@@ -79,6 +79,7 @@ impl Plugin for Math {
 
             let val = Entry {
                 name: format!("{first}{string}"),
+                tag: None,
                 description: Some(units),
                 icon: EntryIcon::Name("accessories-calculator".to_string()),
                 small_icon: EntryIcon::None,

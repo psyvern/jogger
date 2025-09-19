@@ -185,12 +185,32 @@ impl FactoryComponent for ListEntryComponent {
                         set_hexpand: true,
                         add_css_class: "texts",
 
-                        Label {
-                            set_label: &self.entry.name,
-                            set_use_markup: true,
-                            set_ellipsize: EllipsizeMode::End,
-                            set_halign: Align::Start,
-                            add_css_class: "name",
+                        GBox {
+                            Label {
+                                set_label: &self.entry.name,
+                                set_use_markup: true,
+                                set_ellipsize: EllipsizeMode::End,
+                                set_halign: Align::Start,
+                                add_css_class: "name",
+                            },
+
+                            match &self.entry.tag {
+                                Some(tag) => {
+                                    Label {
+                                        #[watch]
+                                        set_label: tag,
+                                        set_use_markup: true,
+                                        set_ellipsize: EllipsizeMode::End,
+                                        set_halign: Align::End,
+                                        set_hexpand: true,
+                                        add_css_class: "tag",
+                                        set_lines: 1,
+                                    }
+                                }
+                                None => {
+                                    GBox {}
+                                }
+                            }
                         },
 
                         match &self.entry.description {
@@ -202,6 +222,7 @@ impl FactoryComponent for ListEntryComponent {
                                     set_ellipsize: EllipsizeMode::End,
                                     set_halign: Align::Start,
                                     add_css_class: "description",
+                                    set_lines: 1,
                                 }
                             }
                             None => {

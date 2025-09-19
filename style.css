@@ -130,6 +130,12 @@ row .icon {
     font-size: 18px;
 }
 
+.tag {
+    font-weight: 500;
+    opacity: 0.75;
+    font-size: 15px;
+}
+
 .description {
     font-weight: 500;
     opacity: 0.5;

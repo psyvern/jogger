@@ -36,6 +36,7 @@ pub enum EntryAction {
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub name: String,
+    pub tag: Option<String>,
     pub description: Option<String>,
     pub icon: EntryIcon,
     pub small_icon: EntryIcon,

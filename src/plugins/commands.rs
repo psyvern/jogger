@@ -30,6 +30,7 @@ impl Plugin for Commands {
     fn search(&self, query: &str) -> Box<dyn Iterator<Item = crate::interface::Entry>> {
         Box::new(std::iter::once(Entry {
             name: format!("<tt>{}</tt>", gtk::glib::markup_escape_text(query.trim())),
+            tag: None,
             description: self.shell.as_ref().map(|x| format!("<tt>{x}</tt>")),
             icon: EntryIcon::Name("terminal".to_owned()),
             small_icon: EntryIcon::None,
