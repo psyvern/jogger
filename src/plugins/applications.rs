@@ -325,7 +325,7 @@ impl Plugin for Applications {
                             .actions
                             .iter()
                             .flat_map(|action| {
-                                // return None;
+                                return None;
                                 let mut score = 0;
 
                                 score +=
