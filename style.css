@@ -114,6 +114,10 @@ row .icon {
     -gtk-icon-shadow: 0 0 10px #111418;
 }
 
+row .small_icon {
+    -gtk-icon-shadow: 0px 0px 3px #111418;
+}
+
 .texts {
     margin-left: 16px;
 }
