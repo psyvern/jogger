@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::BufRead;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::{cmp::Ordering, collections::HashMap};
 
@@ -149,7 +150,7 @@ impl DesktopEntry {
 
         match res {
             Some((Type::Name, score, indices, string)) => Some((
-                3,
+                7,
                 score,
                 Entry::from(&DesktopEntry {
                     name: color_fuzzy_match(string, indices),
@@ -157,7 +158,7 @@ impl DesktopEntry {
                 }),
             )),
             Some((Type::Description, score, indices, string)) => Some((
-                2,
+                6,
                 score,
                 Entry::from(&DesktopEntry {
                     description: Some(color_fuzzy_match(string, indices)),
@@ -165,12 +166,12 @@ impl DesktopEntry {
                 }),
             )),
             Some((Type::Keywords, score, indices, string)) => Some((
-                1,
+                5,
                 score,
                 Entry::from((self, format!("#{}", color_fuzzy_match(string, indices)))),
             )),
             Some((Type::Categories, score, indices, string)) => Some((
-                0,
+                4,
                 score,
                 Entry::from((self, format!("@{}", color_fuzzy_match(string, indices)))),
             )),
@@ -179,16 +180,164 @@ impl DesktopEntry {
     }
 }
 
+fn subentry_get_score(
+    entry: &DesktopEntry,
+    action: &SubEntry,
+    query: &str,
+    matcher: &SkimMatcherV2,
+) -> Option<(u8, i64, Entry)> {
+    enum Type {
+        Name,
+        EntryName,
+        Categories,
+        Keywords,
+    }
+
+    let name = matcher
+        .fuzzy_indices(&action.name, query)
+        .map(|y| (y.0, y.1, &action.name));
+    let entry_name = matcher
+        .fuzzy_indices(&entry.name, query)
+        .map(|y| (y.0, y.1, &entry.name));
+    let categories = entry
+        .categories
+        .iter()
+        .flat_map(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)))
+        .max_by_key(|x| x.0);
+    let keywords = entry
+        .keywords
+        .iter()
+        .flat_map(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)))
+        .max_by_key(|x| x.0);
+
+    let res = [
+        (Type::Name, name),
+        (Type::EntryName, entry_name),
+        (Type::Categories, categories.map(|x| (x.0 / 2, x.1, x.2))),
+        (Type::Keywords, keywords.map(|x| (x.0 / 2, x.1, x.2))),
+    ]
+    .into_iter()
+    .flat_map(|x| x.1.map(|y| (x.0, y.0, y.1, y.2)))
+    .max_by_key(|x| x.1);
+
+    match res {
+        Some((Type::Name, score, indices, string)) => Some((
+            3,
+            score,
+            Entry {
+                name: color_fuzzy_match(string, indices),
+                tag: None,
+                description: Some(entry.name.clone()),
+                icon: EntryIcon::from(entry.icon.clone()),
+                small_icon: EntryIcon::Name("emblem-added".into()),
+                sub_entries: HashMap::new(),
+                action: action.action.clone(),
+                id: "".to_owned(),
+            },
+        )),
+        Some((Type::EntryName, score, indices, string)) => Some((
+            2,
+            score,
+            Entry {
+                name: action.name.clone(),
+                tag: None,
+                description: Some(color_fuzzy_match(string, indices)),
+                icon: EntryIcon::from(entry.icon.clone()),
+                small_icon: EntryIcon::Name("emblem-added".into()),
+                sub_entries: HashMap::new(),
+                action: action.action.clone(),
+                id: "".to_owned(),
+            },
+        )),
+        Some((Type::Keywords, score, indices, string)) => Some((
+            1,
+            score,
+            Entry {
+                name: action.name.clone(),
+                tag: Some(format!("#{}", color_fuzzy_match(string, indices))),
+                description: Some(entry.name.clone()),
+                icon: EntryIcon::from(entry.icon.clone()),
+                small_icon: EntryIcon::Name("emblem-added".into()),
+                sub_entries: HashMap::new(),
+                action: action.action.clone(),
+                id: "".to_owned(),
+            },
+        )),
+        Some((Type::Categories, score, indices, string)) => Some((
+            0,
+            score,
+            Entry {
+                name: action.name.clone(),
+                tag: Some(format!("@{}", color_fuzzy_match(string, indices))),
+                description: Some(entry.name.clone()),
+                icon: EntryIcon::from(entry.icon.clone()),
+                small_icon: EntryIcon::Name("emblem-added".into()),
+                sub_entries: HashMap::new(),
+                action: action.action.clone(),
+                id: "".to_owned(),
+            },
+        )),
+        _ => None,
+    }
+}
+
+struct Ranges<I: Iterator<Item = usize>> {
+    v: I,
+    current: Option<(usize, usize)>,
+}
+
+impl<I: Iterator<Item = usize>> Iterator for Ranges<I> {
+    type Item = Range<usize>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.v.next(), self.current) {
+                (None, None) => break None,
+                (None, Some((start, end))) => {
+                    self.current = None;
+                    break Some(start..end);
+                }
+                (Some(i), None) => self.current = Some((i, i + 1)),
+                (Some(i), Some((start, end))) => {
+                    if end == i {
+                        self.current = Some((start, i + 1));
+                    } else {
+                        self.current = Some((i, i + 1));
+                        break Some(start..end);
+                    }
+                }
+            }
+        }
+    }
+}
+
+trait IteratorExt: Iterator<Item = usize> {
+    fn ranges(self) -> Ranges<Self>
+    where
+        Self: Sized,
+    {
+        Ranges {
+            v: self,
+            current: None,
+        }
+    }
+}
+
+impl<I: Iterator<Item = usize>> IteratorExt for I {}
+
 fn color_fuzzy_match(string: &str, indices: Vec<usize>) -> String {
     let mut buffer = String::new();
 
-    for (i, c) in string.chars().enumerate() {
-        if indices.contains(&i) {
-            buffer.push_str(&format!("<span color=\"#A2C9FE\">{c}</span>",));
-        } else {
-            buffer.push(c);
-        }
+    let mut last = 0;
+    for range in indices.into_iter().ranges() {
+        buffer.push_str(&string[last..range.start]);
+        last = range.end;
+        buffer.push_str(&format!(
+            "<span color=\"#A2C9FE\">{}</span>",
+            &string[range]
+        ));
     }
+    buffer.push_str(&string[last..]);
 
     buffer
 }
@@ -324,40 +473,8 @@ impl Plugin for Applications {
                         entry
                             .actions
                             .iter()
-                            .flat_map(|action| {
-                                return None;
-                                let mut score = 0;
-
-                                score +=
-                                    4 * matcher.fuzzy_match(&action.1.name, query).unwrap_or(0);
-                                score += 4 * matcher.fuzzy_match(&entry.name, query).unwrap_or(0);
-
-                                for category in entry.categories.iter() {
-                                    score += matcher.fuzzy_match(category, query).unwrap_or(0);
-                                }
-
-                                for keyword in entry.keywords.iter() {
-                                    score += matcher.fuzzy_match(keyword, query).unwrap_or(0);
-                                }
-
-                                if score > 0 {
-                                    Some((
-                                        0,
-                                        score,
-                                        Entry {
-                                            name: action.1.name.clone(),
-                                            tag: None,
-                                            description: Some(entry.name.clone()),
-                                            icon: EntryIcon::from(entry.icon.clone()),
-                                            small_icon: EntryIcon::Name("emblem-added".into()),
-                                            sub_entries: HashMap::new(),
-                                            action: action.1.action.clone(),
-                                            id: "".to_owned(),
-                                        },
-                                    ))
-                                } else {
-                                    None
-                                }
+                            .flat_map(|(_, action)| {
+                                subentry_get_score(entry, action, query, &matcher)
                             })
                             .chain(entry.get_score(query, &matcher))
                     })
