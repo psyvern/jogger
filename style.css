@@ -9,7 +9,7 @@ placeholder {
 window {
     border-radius: 16px;
     border: 2px solid #FFFFFFAF;
-    background-color: #111418F7;
+    background-color: #111418DF;
 }
 
 list {
@@ -132,13 +132,12 @@ row .icon {
 
 .tag {
     font-weight: 500;
-    opacity: 0.75;
     font-size: 15px;
 }
 
 .description {
     font-weight: 500;
-    opacity: 0.5;
+    color: #8d9199;
     font-size: 15px;
 }
 

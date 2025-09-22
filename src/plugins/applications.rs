@@ -10,7 +10,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
-use crate::{Entry, EntryAction, Plugin, SubEntry, interface::EntryIcon};
+use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
 const FIELD_CODE_LIST: [&str; 13] = [
     "%f", "%F", "%u", "%U", "%d", "%D", "%n", "%N", "%i", "%c", "%k", "%v", "%m",
@@ -24,10 +24,17 @@ struct DesktopEntry {
     path: Option<PathBuf>,
     categories: Vec<String>,
     keywords: Vec<String>,
-    actions: HashMap<String, SubEntry>,
+    actions: HashMap<String, DesktopEntryAction>,
     exec: Option<String>,
     terminal: bool,
     frequency: u32,
+}
+
+#[derive(Clone, Debug)]
+struct DesktopEntryAction {
+    name: String,
+    icon: Option<String>,
+    action: EntryAction,
 }
 
 impl DesktopEntry {
@@ -76,11 +83,12 @@ impl DesktopEntry {
                             }
                             Some((
                                 x.to_string(),
-                                SubEntry {
+                                DesktopEntryAction {
                                     name: value
                                         .action_name(x, locales)
                                         .map(|x| x.to_string())
                                         .unwrap_or("<none>".into()),
+                                    icon: value.action_entry(x, "Icon").map(str::to_string),
                                     action: value
                                         .action_exec(x)
                                         .map(|exec| {
@@ -182,7 +190,7 @@ impl DesktopEntry {
 
 fn subentry_get_score(
     entry: &DesktopEntry,
-    action: &SubEntry,
+    action: &DesktopEntryAction,
     query: &str,
     matcher: &SkimMatcherV2,
 ) -> Option<(u8, i64, Entry)> {
@@ -228,7 +236,7 @@ fn subentry_get_score(
                 name: color_fuzzy_match(string, indices),
                 tag: None,
                 description: Some(entry.name.clone()),
-                icon: EntryIcon::from(entry.icon.clone()),
+                icon: EntryIcon::from(action.icon.clone().or(entry.icon.clone())),
                 small_icon: EntryIcon::Name("emblem-added".into()),
                 sub_entries: HashMap::new(),
                 action: action.action.clone(),
@@ -242,7 +250,7 @@ fn subentry_get_score(
                 name: action.name.clone(),
                 tag: None,
                 description: Some(color_fuzzy_match(string, indices)),
-                icon: EntryIcon::from(entry.icon.clone()),
+                icon: EntryIcon::from(action.icon.clone().or(entry.icon.clone())),
                 small_icon: EntryIcon::Name("emblem-added".into()),
                 sub_entries: HashMap::new(),
                 action: action.action.clone(),
@@ -256,7 +264,7 @@ fn subentry_get_score(
                 name: action.name.clone(),
                 tag: Some(format!("#{}", color_fuzzy_match(string, indices))),
                 description: Some(entry.name.clone()),
-                icon: EntryIcon::from(entry.icon.clone()),
+                icon: EntryIcon::from(action.icon.clone().or(entry.icon.clone())),
                 small_icon: EntryIcon::Name("emblem-added".into()),
                 sub_entries: HashMap::new(),
                 action: action.action.clone(),
@@ -270,7 +278,7 @@ fn subentry_get_score(
                 name: action.name.clone(),
                 tag: Some(format!("@{}", color_fuzzy_match(string, indices))),
                 description: Some(entry.name.clone()),
-                icon: EntryIcon::from(entry.icon.clone()),
+                icon: EntryIcon::from(action.icon.clone().or(entry.icon.clone())),
                 small_icon: EntryIcon::Name("emblem-added".into()),
                 sub_entries: HashMap::new(),
                 action: action.action.clone(),
