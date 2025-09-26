@@ -688,6 +688,14 @@ impl AsyncComponent for AppModel {
                     match &entry.action {
                         EntryAction::Nothing => {}
                         EntryAction::Close => sender.input(AppMsg::Hide),
+                        EntryAction::Write(query) => {
+                            self.search_entry.emit(query.clone());
+                        }
+                        EntryAction::Open(path) => {
+                            if open::that_detached(path).is_ok() {
+                                sender.input(AppMsg::Hide);
+                            }
+                        }
                         EntryAction::Copy(value) => {
                             let mut opts = wl_clipboard_rs::copy::Options::new();
                             opts.foreground(true);

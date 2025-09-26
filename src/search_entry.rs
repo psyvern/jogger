@@ -4,7 +4,7 @@ use gtk::{
     glib::Propagation,
     prelude::{EditableExt, EntryExt, EventControllerExt, WidgetExt},
 };
-use relm4::{ComponentParts, ComponentSender, SimpleComponent};
+use relm4::{Component, ComponentParts, ComponentSender, SimpleComponent};
 
 use crate::MoveDirection;
 
@@ -21,10 +21,11 @@ pub enum SearchEntryMsg {
 pub struct SearchEntryModel {}
 
 #[relm4::component(pub)]
-impl SimpleComponent for SearchEntryModel {
+impl Component for SearchEntryModel {
     type Init = ();
-    type Input = ();
+    type Input = String;
     type Output = SearchEntryMsg;
+    type CommandOutput = ();
 
     view! {
         root = gtk::Entry {
@@ -130,5 +131,8 @@ impl SimpleComponent for SearchEntryModel {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, _: Self::Input, _: ComponentSender<Self>) {}
+    fn update(&mut self, message: Self::Input, _: ComponentSender<Self>, root: &Self::Root) {
+        root.set_text(&message);
+        root.set_position(-1);
+    }
 }

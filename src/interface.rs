@@ -33,6 +33,8 @@ pub enum EntryAction {
     HyprctlExec(String),
     Shell(String, Option<PathBuf>),
     Command(String, Option<PathBuf>),
+    Write(String),
+    Open(PathBuf),
 }
 
 #[derive(Clone, Debug)]

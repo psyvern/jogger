@@ -3,7 +3,6 @@ use fuzzy_matcher::FuzzyMatcher;
 use gtk::glib;
 use hyprland::{
     data::{Clients, Workspace},
-    dispatch::Dispatch,
     shared::{Address, HyprData, HyprDataActive, HyprDataActiveOptional},
 };
 use itertools::Itertools;
