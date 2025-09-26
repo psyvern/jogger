@@ -19,6 +19,10 @@ impl Commands {
 }
 
 impl Plugin for Commands {
+    fn name(&self) -> &str {
+        "Terminal"
+    }
+
     fn icon(&self) -> Option<&str> {
         Some("terminal")
     }
@@ -27,7 +31,7 @@ impl Plugin for Commands {
         Some(">")
     }
 
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = crate::interface::Entry>> {
+    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry>> {
         Box::new(std::iter::once(Entry {
             name: format!("<tt>{}</tt>", gtk::glib::markup_escape_text(query.trim())),
             tag: None,

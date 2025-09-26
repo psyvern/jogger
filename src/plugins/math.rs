@@ -27,11 +27,15 @@ impl fend_core::Interrupt for CustomInterrupt {
 }
 
 impl Plugin for Math {
+    fn name(&self) -> &str {
+        "Calculator"
+    }
+
     fn icon(&self) -> Option<&str> {
         Some("accessories-calculator")
     }
 
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = crate::Entry>> {
+    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry>> {
         let val = fend_core::evaluate_preview_with_interrupt(
             query,
             &mut self.context.clone(),

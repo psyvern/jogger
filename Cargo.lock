@@ -912,6 +912,7 @@ dependencies = [
  "parking_lot",
  "relm4",
  "serde",
+ "stoppable_thread",
  "tokio",
  "tokio-util",
  "toml",
@@ -1561,6 +1562,12 @@ checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 dependencies = [
  "lock_api",
 ]
+
+[[package]]
+name = "stoppable_thread"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6700c1ed393aa9c1fff950032a64a4856436dadee820641ce1b914cab65019f"
 
 [[package]]
 name = "syn"

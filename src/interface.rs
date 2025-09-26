@@ -8,6 +8,8 @@ use gtk::Image;
 pub trait Plugin: Debug + Send + Sync {
     fn open(&mut self) {}
 
+    fn name(&self) -> &str;
+
     fn icon(&self) -> Option<&str> {
         None
     }

@@ -16,8 +16,6 @@ use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::select;
-use tokio_util::sync::CancellationToken;
 
 use gtk::{
     Align, Box as GBox, Button, Grid, Image, Justification, Label, ListBox, ListBoxRow,
@@ -31,7 +29,7 @@ use gtk::{
     },
 };
 use gtk_layer_shell::{KeyboardMode, Layer, LayerShell};
-use interface::{Entry, EntryAction, Plugin, SubEntry};
+use interface::{Entry, EntryAction, Plugin};
 use relm4::{
     Component, ComponentController, Controller, FactorySender, RelmApp, RelmWidgetExt,
     factory::{Position, positions::GridPosition},
@@ -343,7 +341,7 @@ enum CommandMsg {}
 
 struct AppModel {
     query: String,
-    cancellation_token: CancellationToken,
+    thread_handle: Option<stoppable_thread::StoppableHandle<()>>,
     plugins: Arc<RwLock<Vec<Box<dyn Plugin>>>>,
     plugins_fn: Vec<fn() -> BoxFuture<'static, Box<dyn Plugin>>>,
     selected_plugin: Option<usize>,
@@ -372,8 +370,8 @@ impl AsyncComponent for AppModel {
     view! {
         Window {
             set_title: Some("Jogger"),
-            set_default_width: 720,
-            set_default_height: 720,
+            set_default_width: 760,
+            set_default_height: 760,
             #[watch]
             set_visible: model.visible,
 
@@ -433,6 +431,34 @@ impl AsyncComponent for AppModel {
                         },
                     }
                 },
+
+                /*GBox {
+                    set_widget_name: "action_bar",
+
+                    Image {
+                        #[watch]
+                        set_icon_name: Some(model.selected_plugin
+                            .and_then(|index| {
+                                let plugin = model.plugins.read();
+                                Some(plugin.get(index)?.icon()?.to_owned())
+                            })
+                            // .and_then(|plugin| plugin.icon())
+                            .unwrap_or("edit-find".to_string()))
+                        .as_deref()
+                    },
+
+                    Label {
+                        #[watch]
+                        set_label: &model.selected_plugin
+                            .and_then(|index| {
+                                let plugin = model.plugins.read();
+                                Some(plugin.get(index)?.name().to_string())
+                            })
+                            .unwrap_or_default()
+                    },
+
+                    append = &Image::from_icon_name("keyboard-return"),
+                },*/
             },
         }
     }
@@ -470,7 +496,7 @@ impl AsyncComponent for AppModel {
 
         let model = AppModel {
             query: String::new(),
-            cancellation_token: CancellationToken::new(),
+            thread_handle: None,
             plugins: Arc::new(RwLock::new(Vec::new())),
             plugins_fn: plugins.clone(),
             selected_plugin: None,
@@ -586,7 +612,7 @@ impl AsyncComponent for AppModel {
                 self.selected_entry = 0;
                 self.query = query;
 
-                if self.selected_plugin.is_none() {
+                if self.selected_plugin.is_none() && !self.query.is_empty() {
                     let plugin = self.plugins.read();
                     let plugin = plugin
                         .iter()
@@ -600,34 +626,36 @@ impl AsyncComponent for AppModel {
                     }
                 };
 
-                self.cancellation_token.cancel();
+                if let Some(handle) = self.thread_handle.take() {
+                    handle.stop();
+                }
 
-                self.cancellation_token = CancellationToken::new();
                 if !self.query.is_empty() || self.selected_plugin.is_some() {
-                    let child_token = self.cancellation_token.child_token();
-
                     let plugins = self.plugins.clone();
                     let selected_plugin = self.selected_plugin;
                     let query = self.query.clone();
-                    tokio::spawn(async move {
-                        select! {
-                            _ = child_token.cancelled() => {}
-                            entries = async {
-                                let plugins = plugins.read();
-                                match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
-                                    None => plugins
-                                        .iter()
-                                        .enumerate()
-                                        .filter(|(_, x)| x.prefix().is_none())
-                                        .flat_map(|(i, x)| x.search(&query).map(move |x| (i, x)))
-                                        .collect_vec(),
-                                    Some((i, plugin)) => plugin.search(&query).map(|x| (i, x)).collect_vec(),
+                    self.thread_handle = Some(stoppable_thread::spawn(move |stopped| {
+                        let entries = {
+                            let plugins = plugins.read();
+                            match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
+                                None => plugins
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, x)| x.prefix().is_none())
+                                    .flat_map(|(i, x)| x.search(&query).map(move |x| (i, x)))
+                                    .collect_vec(),
+                                Some((i, plugin)) => {
+                                    plugin.search(&query).map(|x| (i, x)).collect_vec()
                                 }
-                            } => {
-                                sender.input(AppMsg::SearchResults(entries));
                             }
+                        };
+
+                        if !stopped.get() {
+                            sender.input(AppMsg::SearchResults(entries));
                         }
-                    });
+                    }));
+                } else {
+                    sender.input(AppMsg::SearchResults(vec![]))
                 }
             }
             AppMsg::Activate(index) => {
@@ -706,7 +734,7 @@ impl AsyncComponent for AppModel {
             AppMsg::Hide => {
                 self.visible = false;
                 self.search_entry.widget().set_text("");
-                self.cancellation_token = CancellationToken::new();
+                self.thread_handle = None;
                 self.selected_plugin = None;
                 self.selected_entry = 0;
                 self.grid_entries.broadcast(GridEntryMsg::Unselect);

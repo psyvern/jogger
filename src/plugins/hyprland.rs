@@ -99,6 +99,10 @@ impl Hyprland {
 }
 
 impl Plugin for Hyprland {
+    fn name(&self) -> &str {
+        "Windows"
+    }
+
     fn open(&mut self) {
         let Ok(current_workspace) = Workspace::get_active() else {
             return;
@@ -154,7 +158,7 @@ impl Plugin for Hyprland {
         Some("w:")
     }
 
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = crate::interface::Entry> + '_> {
+    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
         if query.is_empty() {
             Box::new(
                 self.clients

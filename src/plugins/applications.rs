@@ -37,6 +37,13 @@ struct DesktopEntryAction {
     action: EntryAction,
 }
 
+enum Kind {
+    Name,
+    Description,
+    Category(usize),
+    Keyword(usize),
+}
+
 impl DesktopEntry {
     fn new(
         value: freedesktop_desktop_entry::DesktopEntry,
@@ -121,171 +128,161 @@ impl DesktopEntry {
     }
 
     fn get_score(&self, query: &str, matcher: &SkimMatcherV2) -> Option<(u8, i64, Entry)> {
-        enum Type {
-            Name,
-            Description,
-            Categories,
-            Keywords,
-        }
-
         let name = matcher
             .fuzzy_indices(&self.name, query)
-            .map(|y| (y.0, y.1, &self.name));
-        let description = self
-            .description
-            .as_ref()
-            .and_then(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)));
-        let categories = self
-            .categories
-            .iter()
-            .flat_map(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)))
-            .max_by_key(|x| x.0);
-        let keywords = self
-            .keywords
-            .iter()
-            .flat_map(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)))
-            .max_by_key(|x| x.0);
+            .map(|x| (Kind::Name, x.0 * 4 / 3, x.1));
+        let description = self.description.as_ref().and_then(|x| {
+            matcher
+                .fuzzy_indices(x, query)
+                .map(|x| (Kind::Description, x.0 * 5 / 4, x.1))
+        });
+        let categories = self.categories.iter().enumerate().flat_map(|(i, x)| {
+            matcher
+                .fuzzy_indices(x, query)
+                .map(|x| (Kind::Category(i), x.0, x.1))
+        });
+        let keywords = self.keywords.iter().enumerate().flat_map(|(i, x)| {
+            matcher
+                .fuzzy_indices(x, query)
+                .map(|x| (Kind::Keyword(i), x.0, x.1))
+        });
 
-        let res = [
-            (Type::Name, name),
-            (Type::Description, description),
-            (Type::Categories, categories.map(|x| (x.0 / 2, x.1, x.2))),
-            (Type::Keywords, keywords.map(|x| (x.0 / 2, x.1, x.2))),
-        ]
-        .into_iter()
-        .flat_map(|x| x.1.map(|y| (x.0, y.0, y.1, y.2)))
-        .max_by_key(|x| x.1);
-
-        match res {
-            Some((Type::Name, score, indices, string)) => Some((
-                7,
-                score,
-                Entry::from(&DesktopEntry {
-                    name: color_fuzzy_match(string, indices),
-                    ..self.clone()
-                }),
-            )),
-            Some((Type::Description, score, indices, string)) => Some((
-                6,
-                score,
-                Entry::from(&DesktopEntry {
-                    description: Some(color_fuzzy_match(string, indices)),
-                    ..self.clone()
-                }),
-            )),
-            Some((Type::Keywords, score, indices, string)) => Some((
-                5,
-                score,
-                Entry::from((self, format!("#{}", color_fuzzy_match(string, indices)))),
-            )),
-            Some((Type::Categories, score, indices, string)) => Some((
-                4,
-                score,
-                Entry::from((self, format!("@{}", color_fuzzy_match(string, indices)))),
-            )),
-            _ => None,
-        }
-    }
-}
-
-fn subentry_get_score(
-    entry: &DesktopEntry,
-    action: &DesktopEntryAction,
-    query: &str,
-    matcher: &SkimMatcherV2,
-) -> Option<(u8, i64, Entry)> {
-    enum Type {
-        Name,
-        EntryName,
-        Categories,
-        Keywords,
+        itertools::chain!(name, description, categories, keywords)
+            .max_by_key(|x| x.1)
+            .map(|(kind, score, indices)| match kind {
+                Kind::Name => (
+                    7,
+                    score,
+                    Entry::from(&DesktopEntry {
+                        name: color_fuzzy_match(&self.name, indices),
+                        ..self.clone()
+                    }),
+                ),
+                Kind::Description => (
+                    6,
+                    score,
+                    Entry::from(&DesktopEntry {
+                        name: self.name.clone(),
+                        description: self
+                            .description
+                            .as_ref()
+                            .map(|x| color_fuzzy_match(x, indices)),
+                        ..self.clone()
+                    }),
+                ),
+                Kind::Keyword(i) => (
+                    5,
+                    score,
+                    Entry::from((
+                        self,
+                        format!("#{}", color_fuzzy_match(&self.keywords[i], indices)),
+                    )),
+                ),
+                Kind::Category(i) => (
+                    4,
+                    score,
+                    Entry::from((
+                        self,
+                        format!("@{}", color_fuzzy_match(&self.categories[i], indices)),
+                    )),
+                ),
+            })
     }
 
-    let name = matcher
-        .fuzzy_indices(&action.name, query)
-        .map(|y| (y.0, y.1, &action.name));
-    let entry_name = matcher
-        .fuzzy_indices(&entry.name, query)
-        .map(|y| (y.0, y.1, &entry.name));
-    let categories = entry
-        .categories
-        .iter()
-        .flat_map(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)))
-        .max_by_key(|x| x.0);
-    let keywords = entry
-        .keywords
-        .iter()
-        .flat_map(|x| matcher.fuzzy_indices(x, query).map(|y| (y.0, y.1, x)))
-        .max_by_key(|x| x.0);
+    fn get_action_score(
+        &self,
+        action: &DesktopEntryAction,
+        query: &str,
+        matcher: &SkimMatcherV2,
+    ) -> Option<(u8, i64, Entry)> {
+        let name = matcher
+            .fuzzy_indices(&action.name, query)
+            .map(|x| (Kind::Name, x.0 * 4 / 3, x.1));
+        let entry_name = matcher
+            .fuzzy_indices(&self.name, query)
+            .map(|x| (Kind::Description, x.0 * 5 / 4, x.1));
+        let categories = self.categories.iter().enumerate().flat_map(|(i, x)| {
+            matcher
+                .fuzzy_indices(x, query)
+                .map(|x| (Kind::Category(i), x.0, x.1))
+        });
+        let keywords = self.keywords.iter().enumerate().flat_map(|(i, x)| {
+            matcher
+                .fuzzy_indices(x, query)
+                .map(|x| (Kind::Keyword(i), x.0, x.1))
+        });
 
-    let res = [
-        (Type::Name, name),
-        (Type::EntryName, entry_name),
-        (Type::Categories, categories.map(|x| (x.0 / 2, x.1, x.2))),
-        (Type::Keywords, keywords.map(|x| (x.0 / 2, x.1, x.2))),
-    ]
-    .into_iter()
-    .flat_map(|x| x.1.map(|y| (x.0, y.0, y.1, y.2)))
-    .max_by_key(|x| x.1);
-
-    match res {
-        Some((Type::Name, score, indices, string)) => Some((
-            3,
-            score,
-            Entry {
-                name: color_fuzzy_match(string, indices),
-                tag: None,
-                description: Some(entry.name.clone()),
-                icon: EntryIcon::from(entry.icon.clone()),
-                small_icon: EntryIcon::Name(action.icon.clone().unwrap_or("emblem-added".into())),
-                sub_entries: HashMap::new(),
-                action: action.action.clone(),
-                id: "".to_owned(),
-            },
-        )),
-        Some((Type::EntryName, score, indices, string)) => Some((
-            2,
-            score,
-            Entry {
-                name: action.name.clone(),
-                tag: None,
-                description: Some(color_fuzzy_match(string, indices)),
-                icon: EntryIcon::from(entry.icon.clone()),
-                small_icon: EntryIcon::Name(action.icon.clone().unwrap_or("emblem-added".into())),
-                sub_entries: HashMap::new(),
-                action: action.action.clone(),
-                id: "".to_owned(),
-            },
-        )),
-        Some((Type::Keywords, score, indices, string)) => Some((
-            1,
-            score,
-            Entry {
-                name: action.name.clone(),
-                tag: Some(format!("#{}", color_fuzzy_match(string, indices))),
-                description: Some(entry.name.clone()),
-                icon: EntryIcon::from(entry.icon.clone()),
-                small_icon: EntryIcon::Name(action.icon.clone().unwrap_or("emblem-added".into())),
-                sub_entries: HashMap::new(),
-                action: action.action.clone(),
-                id: "".to_owned(),
-            },
-        )),
-        Some((Type::Categories, score, indices, string)) => Some((
-            0,
-            score,
-            Entry {
-                name: action.name.clone(),
-                tag: Some(format!("@{}", color_fuzzy_match(string, indices))),
-                description: Some(entry.name.clone()),
-                icon: EntryIcon::from(entry.icon.clone()),
-                small_icon: EntryIcon::Name(action.icon.clone().unwrap_or("emblem-added".into())),
-                sub_entries: HashMap::new(),
-                action: action.action.clone(),
-                id: "".to_owned(),
-            },
-        )),
-        _ => None,
+        itertools::chain!(name, entry_name, categories, keywords)
+            .max_by_key(|x| x.1)
+            .map(|(kind, score, indices)| match kind {
+                Kind::Name => (
+                    3,
+                    score,
+                    Entry {
+                        name: color_fuzzy_match(&action.name, indices),
+                        tag: None,
+                        description: Some(self.name.clone()),
+                        icon: EntryIcon::from(self.icon.clone()),
+                        small_icon: EntryIcon::Name(
+                            action.icon.clone().unwrap_or("emblem-added".into()),
+                        ),
+                        sub_entries: HashMap::new(),
+                        action: action.action.clone(),
+                        id: "".to_owned(),
+                    },
+                ),
+                Kind::Description => (
+                    2,
+                    score,
+                    Entry {
+                        name: action.name.clone(),
+                        tag: None,
+                        description: Some(format!("#{}", color_fuzzy_match(&self.name, indices))),
+                        icon: EntryIcon::from(self.icon.clone()),
+                        small_icon: EntryIcon::Name(
+                            action.icon.clone().unwrap_or("emblem-added".into()),
+                        ),
+                        sub_entries: HashMap::new(),
+                        action: action.action.clone(),
+                        id: "".to_owned(),
+                    },
+                ),
+                Kind::Keyword(i) => (
+                    1,
+                    score,
+                    Entry {
+                        name: action.name.clone(),
+                        tag: Some(color_fuzzy_match(&self.keywords[i], indices)),
+                        description: Some(self.name.clone()),
+                        icon: EntryIcon::from(self.icon.clone()),
+                        small_icon: EntryIcon::Name(
+                            action.icon.clone().unwrap_or("emblem-added".into()),
+                        ),
+                        sub_entries: HashMap::new(),
+                        action: action.action.clone(),
+                        id: "".to_owned(),
+                    },
+                ),
+                Kind::Category(i) => (
+                    0,
+                    score,
+                    Entry {
+                        name: action.name.clone(),
+                        tag: Some(format!(
+                            "@{}",
+                            color_fuzzy_match(&self.categories[i], indices)
+                        )),
+                        description: Some(self.name.clone()),
+                        icon: EntryIcon::from(self.icon.clone()),
+                        small_icon: EntryIcon::Name(
+                            action.icon.clone().unwrap_or("emblem-added".into()),
+                        ),
+                        sub_entries: HashMap::new(),
+                        action: action.action.clone(),
+                        id: "".to_owned(),
+                    },
+                ),
+            })
     }
 }
 
@@ -454,6 +451,10 @@ impl Applications {
 }
 
 impl Plugin for Applications {
+    fn name(&self) -> &str {
+        "Applications"
+    }
+
     fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
         if query.is_empty() {
             Box::new(
@@ -466,7 +467,7 @@ impl Plugin for Applications {
                     .map(Into::into),
             )
         } else {
-            let matcher = fuzzy_matcher::skim::SkimMatcherV2::default().smart_case();
+            let matcher = fuzzy_matcher::skim::SkimMatcherV2::default().ignore_case();
             // let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
             // let pattern = Pattern::new(
             //     query,
@@ -481,9 +482,7 @@ impl Plugin for Applications {
                         entry
                             .actions
                             .iter()
-                            .flat_map(|(_, action)| {
-                                subentry_get_score(entry, action, query, &matcher)
-                            })
+                            .flat_map(|(_, action)| entry.get_action_score(action, query, &matcher))
                             .chain(entry.get_score(query, &matcher))
                     })
                     .sorted_by_cached_key(|(a, b, _)| (*b, *a))
