@@ -197,11 +197,4 @@ impl Plugin for Hyprland {
             )
         }
     }
-
-    fn select(&self, entry: &Entry) {
-        Dispatch::call(hyprland::dispatch::DispatchType::FocusWindow(
-            hyprland::dispatch::WindowIdentifier::Address(Address::new(entry.id.clone())),
-        ))
-        .unwrap();
-    }
 }

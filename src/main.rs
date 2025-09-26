@@ -174,6 +174,7 @@ impl FactoryComponent for ListEntryComponent {
                             set_halign: Align::End,
                             set_valign: Align::End,
                             add_css_class: "icon",
+                            add_css_class: "small_icon",
                         },
                     },
 
@@ -585,8 +586,11 @@ impl AsyncComponent for AppModel {
                 } else if f64::from(bounds.y()) + f64::from(bounds.height())
                     > adj.value() + adj.page_size()
                 {
+                    // additional vertical spacing of the list
+                    let spacing = 16.0;
                     adj.set_value(
-                        f64::from(bounds.y()) + f64::from(bounds.height()) - adj.page_size(),
+                        f64::from(bounds.y()) + f64::from(bounds.height()) - adj.page_size()
+                            + spacing,
                     );
                 }
                 scrolled.set_vadjustment(Some(&adj));
@@ -609,6 +613,10 @@ impl AsyncComponent for AppModel {
     ) {
         match message {
             AppMsg::Search(query) => {
+                self.grid_entries
+                    .send(self.selected_entry, GridEntryMsg::Unselect);
+                self.grid_entries.send(0, GridEntryMsg::Select);
+
                 self.selected_entry = 0;
                 self.query = query;
 

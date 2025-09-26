@@ -48,7 +48,7 @@ impl DesktopEntry {
     fn new(
         value: freedesktop_desktop_entry::DesktopEntry,
         locales: &[String],
-        frequency: &HashMap<String, u32>,
+        frequency: &[String],
         ignored: &[(String, String)],
     ) -> Self {
         Self {
@@ -123,7 +123,11 @@ impl DesktopEntry {
                 exec
             }),
             terminal: value.terminal(),
-            frequency: frequency.get(value.id()).copied().unwrap_or(0),
+            frequency: frequency
+                .iter()
+                .position(|x| x == value.id())
+                .map(|x| (frequency.len() - x) as u32)
+                .unwrap_or(0),
         }
     }
 
@@ -237,7 +241,7 @@ impl DesktopEntry {
                     Entry {
                         name: action.name.clone(),
                         tag: None,
-                        description: Some(format!("#{}", color_fuzzy_match(&self.name, indices))),
+                        description: Some(color_fuzzy_match(&self.name, indices)),
                         icon: EntryIcon::from(self.icon.clone()),
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
@@ -429,12 +433,15 @@ impl Applications {
         };
 
         let frequency = base_dirs.place_config_file("frequency.toml").unwrap();
-        let frequency = if std::fs::exists(&frequency).unwrap() {
-            let frequency = std::fs::read_to_string(frequency).unwrap();
-            toml::from_str::<HashMap<String, u32>>(&frequency).unwrap()
+        let frequency = if std::fs::exists(&frequency).unwrap_or(false) {
+            std::fs::read_to_string(frequency)
+                .unwrap_or_default()
+                .lines()
+                .map(str::to_owned)
+                .collect_vec()
         } else {
             std::fs::File::create(frequency).unwrap();
-            HashMap::new()
+            vec![]
         };
 
         let locales = get_languages_from_env();

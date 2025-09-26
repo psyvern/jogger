@@ -55,11 +55,6 @@ row {
     border-width: 2px;
     border-style: solid;
     border-color: transparent;
-
-    transition-timing-function: ease-in-out;
-    transition-duration: 0.15s;
-    transition-property: background-color;
-    transition-property: border-color;
 }
 
 row:hover {
@@ -97,12 +92,12 @@ row:focus {
 #search_bar>button {
     all: unset;
 
-    padding: 6px 7.5px;
+    padding: 6px 8px;
     border-radius: 6px;
 }
 
 #search_bar>button:hover {
-    background-color: #111418;
+    background-color: #272a2f;
 }
 
 #action_bar {
