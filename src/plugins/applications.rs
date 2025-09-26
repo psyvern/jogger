@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::BufRead;
-use std::ops::Range;
 use std::path::PathBuf;
 use std::{cmp::Ordering, collections::HashMap};
 
@@ -10,6 +9,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
+use crate::utils::IteratorExt;
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
 const FIELD_CODE_LIST: [&str; 13] = [
@@ -289,50 +289,6 @@ impl DesktopEntry {
             })
     }
 }
-
-struct Ranges<I: Iterator<Item = usize>> {
-    v: I,
-    current: Option<(usize, usize)>,
-}
-
-impl<I: Iterator<Item = usize>> Iterator for Ranges<I> {
-    type Item = Range<usize>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match (self.v.next(), self.current) {
-                (None, None) => break None,
-                (None, Some((start, end))) => {
-                    self.current = None;
-                    break Some(start..end);
-                }
-                (Some(i), None) => self.current = Some((i, i + 1)),
-                (Some(i), Some((start, end))) => {
-                    if end == i {
-                        self.current = Some((start, i + 1));
-                    } else {
-                        self.current = Some((i, i + 1));
-                        break Some(start..end);
-                    }
-                }
-            }
-        }
-    }
-}
-
-trait IteratorExt: Iterator<Item = usize> {
-    fn ranges(self) -> Ranges<Self>
-    where
-        Self: Sized,
-    {
-        Ranges {
-            v: self,
-            current: None,
-        }
-    }
-}
-
-impl<I: Iterator<Item = usize>> IteratorExt for I {}
 
 fn color_fuzzy_match(string: &str, indices: Vec<usize>) -> String {
     let mut buffer = String::new();

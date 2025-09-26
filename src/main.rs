@@ -1,6 +1,7 @@
 pub mod interface;
 mod plugins;
 mod search_entry;
+pub mod utils;
 
 use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
@@ -36,6 +37,8 @@ use relm4::{
     prelude::{DynamicIndex, FactoryComponent, FactoryVecDeque},
 };
 use search_entry::{SearchEntryModel, SearchEntryMsg};
+
+use crate::plugins::files::Files;
 
 #[derive(Debug, Clone)]
 enum GridEntryMsg {
@@ -646,12 +649,20 @@ impl AsyncComponent for AppModel {
                         let entries = {
                             let plugins = plugins.read();
                             match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
-                                None => plugins
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|(_, x)| x.prefix().is_none())
-                                    .flat_map(|(i, x)| x.search(&query).map(move |x| (i, x)))
-                                    .collect_vec(),
+                                None => {
+                                    if query.starts_with(['~', '/']) {
+                                        Files::new().search(&query).map(|x| (999, x)).collect_vec()
+                                    } else {
+                                        plugins
+                                            .iter()
+                                            .enumerate()
+                                            .filter(|(_, x)| x.prefix().is_none())
+                                            .flat_map(|(i, x)| {
+                                                x.search(&query).map(move |x| (i, x))
+                                            })
+                                            .collect_vec()
+                                    }
+                                }
                                 Some((i, plugin)) => {
                                     plugin.search(&query).map(|x| (i, x)).collect_vec()
                                 }
