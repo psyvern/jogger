@@ -39,6 +39,10 @@ in
 
     cargoLock = {
       inherit lockFile;
+
+      outputHashes = {
+        "xdg-mime-0.4.0" = "sha256-2VlQM3aofbFzbM6NSFv2GcFJ2kaE6f19W2iMr9qfc7s=";
+      };
     };
 
     nativeBuildInputs = [
