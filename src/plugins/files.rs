@@ -1,11 +1,13 @@
-use std::{collections::HashMap, fmt::Debug, fs::Metadata, os::unix::fs::MetadataExt};
+use std::{collections::HashMap, fmt::Debug, fs::Metadata, os::unix::fs::MetadataExt, path::Path};
 
+use itertools::Itertools;
 use xdg_mime::SharedMimeInfo;
 
 use crate::interface::{Entry, EntryAction, EntryIcon, Plugin};
 
 pub struct Files {
     mime_db: SharedMimeInfo,
+    home_dir: String,
 }
 
 impl Debug for Files {
@@ -14,12 +16,23 @@ impl Debug for Files {
     }
 }
 
+fn reduce_tilde(path: &Path, home_dir: &str) -> String {
+    let path = path.to_string_lossy();
+    match path.strip_prefix(home_dir) {
+        Some(x) => format!("~{x}"),
+        None => path.into_owned(),
+    }
+}
+
 impl Files {
     pub fn new() -> Self {
         let mut mime_db = SharedMimeInfo::new();
         mime_db.reload();
 
-        Self { mime_db }
+        Self {
+            mime_db,
+            home_dir: std::env::var("HOME").unwrap(),
+        }
     }
 
     fn search_inner(&self, query: &str) -> std::io::Result<Box<dyn Iterator<Item = Entry> + '_>> {
@@ -28,65 +41,58 @@ impl Files {
             let file = std::fs::File::open(&path)?;
             let metadata = file.metadata()?;
             if metadata.is_dir() {
-                let query = query.to_owned();
-                let parent = query.trim_end_matches('/');
-                let parent = parent.rfind('/').map(|x| &parent[..x]).unwrap_or(parent);
                 return Ok(Box::new(
-                    std::iter::once(Entry {
-                        name: "..".to_string(),
-                        tag: None,
-                        description: Some("Go back".to_owned()),
-                        icon: EntryIcon::Name("back".to_owned()),
-                        small_icon: EntryIcon::None,
-                        action: EntryAction::Write(parent.to_owned()),
-                        sub_entries: HashMap::new(),
-                        id: "".to_owned(),
-                    })
-                    .chain(std::fs::read_dir(&path)?.map(move |x| match x {
-                        Ok(x) => {
-                            let metadata = x.metadata().unwrap();
-                            let name = x.file_name();
-                            let name = name.to_string_lossy();
-                            let (icon, desc) = get_file_info(&self.mime_db, &name, &metadata);
-
+                    path.parent()
+                        .map(|x| {
+                            let x = reduce_tilde(x, &self.home_dir);
                             Entry {
-                                name: name.to_string(),
+                                name: "..".to_string(),
                                 tag: None,
-                                description: Some(desc),
-                                icon: EntryIcon::Name(icon),
+                                description: Some("Go back".to_owned()),
+                                icon: EntryIcon::Name("back".to_owned()),
                                 small_icon: EntryIcon::None,
-                                action: if metadata.is_dir() {
-                                    EntryAction::Write(format!(
-                                        "{}/{}/",
-                                        query.rfind('/').map(|x| &query[..x]).unwrap_or(&query),
-                                        name,
-                                    ))
-                                } else {
-                                    EntryAction::Open(x.path())
-                                },
+                                action: EntryAction::Write(if x == "/" { x } else { x + "/" }),
                                 sub_entries: HashMap::new(),
                                 id: "".to_owned(),
                             }
-                        }
-                        Err(_) => Entry {
-                            name: "Nothing".into(),
-                            tag: None,
-                            description: Some("Nothing".to_owned()),
-                            icon: EntryIcon::Name("error".to_owned()),
-                            small_icon: EntryIcon::None,
-                            action: EntryAction::Nothing,
-                            sub_entries: HashMap::new(),
-                            id: "".to_owned(),
-                        },
-                    })),
+                        })
+                        .into_iter()
+                        .chain(
+                            std::fs::read_dir(&path)?
+                                .flatten()
+                                .flat_map(move |x| {
+                                    let metadata = x.metadata().ok()?;
+                                    let name = x.file_name();
+                                    let name = name.to_string_lossy();
+                                    let (icon, desc, small_icon) =
+                                        get_file_info(&self.mime_db, &name, &metadata);
+
+                                    Some(Entry {
+                                        name: name.to_string(),
+                                        tag: None,
+                                        description: Some(desc),
+                                        icon: EntryIcon::Name(icon),
+                                        small_icon: EntryIcon::from(small_icon),
+                                        action: if metadata.is_dir() {
+                                            EntryAction::Write(
+                                                reduce_tilde(&x.path(), &self.home_dir) + "/",
+                                            )
+                                        } else {
+                                            EntryAction::Open(x.path())
+                                        },
+                                        sub_entries: HashMap::new(),
+                                        id: "".to_owned(),
+                                    })
+                                })
+                                .sorted_by_cached_key(|x| x.name.clone()),
+                        ),
                 ));
             }
             Ok(Box::new(std::iter::empty()))
         } else {
             if let (Some(path), Some(file_query)) = (path.parent(), path.file_name()) {
-                let file_query = file_query.to_string_lossy().to_string();
+                let file_query = file_query.to_string_lossy().to_lowercase();
                 let path = path.to_path_buf();
-                let query = query.to_owned();
                 return Ok(Box::new(std::fs::read_dir(&path)?.flat_map(move |x| {
                     let Ok(x) = x else {
                         return None;
@@ -94,22 +100,19 @@ impl Files {
 
                     let name = x.file_name();
                     let name = name.to_string_lossy();
-                    if name.contains(&file_query) {
+                    if name.to_lowercase().contains(&file_query) {
                         let metadata = x.metadata().unwrap();
-                        let (icon, desc) = get_file_info(&self.mime_db, &name, &metadata);
+                        let (icon, desc, small_icon) =
+                            get_file_info(&self.mime_db, &name, &metadata);
 
                         return Some(Entry {
                             name: name.to_string(),
                             tag: None,
                             description: Some(desc),
                             icon: EntryIcon::Name(icon),
-                            small_icon: EntryIcon::None,
+                            small_icon: EntryIcon::from(small_icon),
                             action: if metadata.is_dir() {
-                                EntryAction::Write(format!(
-                                    "{}/{}/",
-                                    query.rfind('/').map(|x| &query[..x]).unwrap_or(&query),
-                                    name,
-                                ))
+                                EntryAction::Write(reduce_tilde(&x.path(), &self.home_dir) + "/")
                             } else {
                                 EntryAction::Open(x.path())
                             },
@@ -126,9 +129,21 @@ impl Files {
     }
 }
 
-fn get_file_info(database: &SharedMimeInfo, name: &str, metadata: &Metadata) -> (String, String) {
+fn get_file_info(
+    database: &SharedMimeInfo,
+    name: &str,
+    metadata: &Metadata,
+) -> (String, String, Option<String>) {
     if metadata.file_type().is_dir() {
-        ("folder".to_owned(), "Folder".to_owned())
+        (
+            "folder".to_owned(),
+            "Folder".to_owned(),
+            if metadata.file_type().is_symlink() {
+                Some("emblem-link".to_owned())
+            } else {
+                None
+            },
+        )
     } else {
         let guess = database
             .guess_mime_type()
@@ -152,6 +167,11 @@ fn get_file_info(database: &SharedMimeInfo, name: &str, metadata: &Metadata) -> 
                 )
                 .to_owned(),
             mime.essence_str().to_owned(),
+            if metadata.file_type().is_symlink() {
+                Some("emblem-link".to_owned())
+            } else {
+                None
+            },
         )
     }
 }
