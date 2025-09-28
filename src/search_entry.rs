@@ -4,7 +4,7 @@ use gtk::{
     glib::Propagation,
     prelude::{EditableExt, EntryExt, EventControllerExt, WidgetExt},
 };
-use relm4::{Component, ComponentParts, ComponentSender, SimpleComponent};
+use relm4::{Component, ComponentParts, ComponentSender};
 
 use crate::MoveDirection;
 

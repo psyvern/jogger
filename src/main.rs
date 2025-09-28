@@ -2,6 +2,7 @@ pub mod interface;
 mod plugins;
 mod search_entry;
 pub mod utils;
+pub mod xdg_database;
 
 use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
@@ -39,6 +40,7 @@ use relm4::{
 use search_entry::{SearchEntryModel, SearchEntryMsg};
 
 use crate::plugins::files::Files;
+use crate::xdg_database::XdgAppDatabase;
 
 #[derive(Debug, Clone)]
 enum GridEntryMsg {
@@ -355,6 +357,7 @@ struct AppModel {
     grid_size: usize,
     search_entry: Controller<SearchEntryModel>,
     visible: bool,
+    app_database: Arc<XdgAppDatabase>,
 }
 
 impl AppModel {
@@ -510,6 +513,7 @@ impl AsyncComponent for AppModel {
             grid_size,
             search_entry,
             visible: false,
+            app_database: Arc::new(XdgAppDatabase::new()),
         };
 
         let entries = model.list_entries.widget();
@@ -645,13 +649,17 @@ impl AsyncComponent for AppModel {
                     let plugins = self.plugins.clone();
                     let selected_plugin = self.selected_plugin;
                     let query = self.query.clone();
+                    let app_database = self.app_database.clone();
                     self.thread_handle = Some(stoppable_thread::spawn(move |stopped| {
                         let entries = {
                             let plugins = plugins.read();
                             match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
                                 None => {
                                     if query.starts_with(['~', '/']) {
-                                        Files::new().search(&query).map(|x| (999, x)).collect_vec()
+                                        Files::new()
+                                            .search(&query, &app_database)
+                                            .map(|x| (999, x))
+                                            .collect_vec()
                                     } else {
                                         plugins
                                             .iter()

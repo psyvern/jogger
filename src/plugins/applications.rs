@@ -17,7 +17,8 @@ const FIELD_CODE_LIST: [&str; 13] = [
 ];
 
 #[derive(Clone, Debug)]
-struct DesktopEntry {
+pub struct DesktopEntry {
+    pub id: String,
     name: String,
     description: Option<String>,
     icon: Option<String>,
@@ -27,6 +28,7 @@ struct DesktopEntry {
     actions: HashMap<String, DesktopEntryAction>,
     exec: Option<String>,
     terminal: bool,
+    pub(crate) mime_types: Vec<String>,
     frequency: u32,
 }
 
@@ -52,6 +54,7 @@ impl DesktopEntry {
         ignored: &[(String, String)],
     ) -> Self {
         Self {
+            id: value.id().to_owned(),
             name: value.name(locales).unwrap_or("<none>".into()).to_string(),
             description: value
                 .comment(locales)
@@ -123,6 +126,13 @@ impl DesktopEntry {
                 exec
             }),
             terminal: value.terminal(),
+            mime_types: value
+                .mime_type()
+                .unwrap_or_default()
+                .iter()
+                .filter(|x| !x.is_empty())
+                .map(|x| x.to_string())
+                .collect(),
             frequency: frequency
                 .iter()
                 .position(|x| x == value.id())
@@ -365,50 +375,53 @@ pub struct Applications {
     entries: Vec<DesktopEntry>,
 }
 
+pub fn read_desktop_entries() -> Vec<DesktopEntry> {
+    let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
+
+    let ignored = base_dirs.place_config_file("ignored.conf").unwrap();
+    let ignored = if std::fs::exists(&ignored).unwrap() {
+        let ignored = File::open(ignored).unwrap();
+        std::io::BufReader::new(ignored)
+            .lines()
+            .map_while(Result::ok)
+            .flat_map(|x| {
+                let mut parts = x.splitn(2, '/');
+                match (parts.next(), parts.next()) {
+                    (Some(a), Some(b)) => Some((a.to_string(), b.to_string())),
+                    _ => None,
+                }
+            })
+            .collect()
+    } else {
+        std::fs::File::create(ignored).unwrap();
+        vec![]
+    };
+
+    let frequency = base_dirs.place_config_file("frequency.toml").unwrap();
+    let frequency = if std::fs::exists(&frequency).unwrap_or(false) {
+        std::fs::read_to_string(frequency)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect_vec()
+    } else {
+        std::fs::File::create(frequency).unwrap();
+        vec![]
+    };
+
+    let locales = get_languages_from_env();
+    freedesktop_desktop_entry::Iter::new(default_paths())
+        .entries(Some(&locales))
+        .filter(|entry| !entry.no_display())
+        .unique_by(|entry| entry.path.clone())
+        .unique_by(|entry| (entry.id().to_owned(), entry.exec().map(str::to_owned)))
+        .map(|entry| DesktopEntry::new(entry, &locales, &frequency, &ignored))
+        .collect()
+}
+
 impl Applications {
     pub async fn new() -> Self {
-        let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
-
-        let ignored = base_dirs.place_config_file("ignored.conf").unwrap();
-        let ignored = if std::fs::exists(&ignored).unwrap() {
-            let ignored = File::open(ignored).unwrap();
-            std::io::BufReader::new(ignored)
-                .lines()
-                .map_while(Result::ok)
-                .flat_map(|x| {
-                    let mut parts = x.splitn(2, '/');
-                    match (parts.next(), parts.next()) {
-                        (Some(a), Some(b)) => Some((a.to_string(), b.to_string())),
-                        _ => None,
-                    }
-                })
-                .collect()
-        } else {
-            std::fs::File::create(ignored).unwrap();
-            vec![]
-        };
-
-        let frequency = base_dirs.place_config_file("frequency.toml").unwrap();
-        let frequency = if std::fs::exists(&frequency).unwrap_or(false) {
-            std::fs::read_to_string(frequency)
-                .unwrap_or_default()
-                .lines()
-                .map(str::to_owned)
-                .collect_vec()
-        } else {
-            std::fs::File::create(frequency).unwrap();
-            vec![]
-        };
-
-        let locales = get_languages_from_env();
-        let entries = freedesktop_desktop_entry::Iter::new(default_paths())
-            .entries(Some(&locales))
-            .filter(|entry| !entry.no_display())
-            .unique_by(|entry| entry.path.clone())
-            .unique_by(|entry| (entry.id().to_owned(), entry.exec().map(str::to_owned)))
-            .map(|entry| DesktopEntry::new(entry, &locales, &frequency, &ignored))
-            .collect_vec();
-
+        let entries = read_desktop_entries();
         Self { entries }
     }
 }

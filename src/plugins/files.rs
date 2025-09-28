@@ -1,12 +1,13 @@
 use std::{collections::HashMap, fmt::Debug, fs::Metadata, os::unix::fs::MetadataExt, path::Path};
 
 use itertools::Itertools;
-use xdg_mime::SharedMimeInfo;
 
-use crate::interface::{Entry, EntryAction, EntryIcon, Plugin};
+use crate::{
+    interface::{Entry, EntryAction, EntryIcon},
+    xdg_database::XdgAppDatabase,
+};
 
 pub struct Files {
-    mime_db: SharedMimeInfo,
     home_dir: String,
 }
 
@@ -26,16 +27,16 @@ fn reduce_tilde(path: &Path, home_dir: &str) -> String {
 
 impl Files {
     pub fn new() -> Self {
-        let mut mime_db = SharedMimeInfo::new();
-        mime_db.reload();
-
         Self {
-            mime_db,
             home_dir: std::env::var("HOME").unwrap(),
         }
     }
 
-    fn search_inner(&self, query: &str) -> std::io::Result<Box<dyn Iterator<Item = Entry> + '_>> {
+    fn search_inner<'a>(
+        &'a self,
+        query: &str,
+        app_database: &'a XdgAppDatabase,
+    ) -> std::io::Result<Box<dyn Iterator<Item = Entry> + 'a>> {
         let path = expanduser::expanduser(query)?;
         if std::fs::exists(&path)? {
             let file = std::fs::File::open(&path)?;
@@ -65,7 +66,7 @@ impl Files {
                                     let name = x.file_name();
                                     let name = name.to_string_lossy();
                                     let (icon, desc, small_icon) =
-                                        get_file_info(&self.mime_db, &name, &metadata);
+                                        get_file_info(app_database, &x.path(), &metadata);
 
                                     Some(Entry {
                                         name: name.to_string(),
@@ -103,7 +104,7 @@ impl Files {
                     if name.to_lowercase().contains(&file_query) {
                         let metadata = x.metadata().unwrap();
                         let (icon, desc, small_icon) =
-                            get_file_info(&self.mime_db, &name, &metadata);
+                            get_file_info(app_database, &x.path(), &metadata);
 
                         return Some(Entry {
                             name: name.to_string(),
@@ -130,8 +131,8 @@ impl Files {
 }
 
 fn get_file_info(
-    database: &SharedMimeInfo,
-    name: &str,
+    database: &XdgAppDatabase,
+    path: &Path,
     metadata: &Metadata,
 ) -> (String, String, Option<String>) {
     if metadata.file_type().is_dir() {
@@ -145,14 +146,10 @@ fn get_file_info(
             },
         )
     } else {
-        let guess = database
-            .guess_mime_type()
-            .zero_size(false)
-            .file_name(name)
-            .guess();
+        let guess = database.mime_db.guess_mime_type().path(path).guess();
         let mime = guess.mime_type();
 
-        let names = database.lookup_icon_names(mime);
+        let names = database.mime_db.lookup_icon_names(mime);
         (
             names
                 .iter()
@@ -166,7 +163,11 @@ fn get_file_info(
                     |x| x,
                 )
                 .to_owned(),
-            mime.essence_str().to_owned(),
+            database
+                .mime_db
+                .get_comment(mime)
+                .cloned()
+                .unwrap_or(String::new()),
             if metadata.file_type().is_symlink() {
                 Some("emblem-link".to_owned())
             } else {
@@ -176,7 +177,7 @@ fn get_file_info(
     }
 }
 
-impl Plugin for Files {
+impl Files {
     fn name(&self) -> &str {
         "Files"
     }
@@ -185,8 +186,12 @@ impl Plugin for Files {
         Some("system-file-manager")
     }
 
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
-        self.search_inner(query)
+    pub fn search<'a>(
+        &'a self,
+        query: &str,
+        app_database: &'a XdgAppDatabase,
+    ) -> Box<dyn Iterator<Item = Entry> + 'a> {
+        self.search_inner(query, app_database)
             .unwrap_or(Box::new(std::iter::empty()))
     }
 }
