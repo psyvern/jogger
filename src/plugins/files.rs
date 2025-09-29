@@ -4,6 +4,7 @@ use itertools::Itertools;
 
 use crate::{
     interface::{Entry, EntryAction, EntryIcon},
+    plugins::applications::DesktopEntry,
     xdg_database::XdgAppDatabase,
 };
 
@@ -65,7 +66,7 @@ impl Files {
                                     let metadata = x.metadata().ok()?;
                                     let name = x.file_name();
                                     let name = name.to_string_lossy();
-                                    let (icon, desc, small_icon) =
+                                    let (icon, desc, small_icon, app) =
                                         get_file_info(app_database, &x.path(), &metadata);
 
                                     Some(Entry {
@@ -78,8 +79,10 @@ impl Files {
                                             EntryAction::Write(
                                                 reduce_tilde(&x.path(), &self.home_dir) + "/",
                                             )
+                                        } else if let Some(app) = app {
+                                            EntryAction::Open(app.id.clone(), Some(x.path()))
                                         } else {
-                                            EntryAction::Open(x.path())
+                                            EntryAction::Nothing
                                         },
                                         sub_entries: HashMap::new(),
                                         id: "".to_owned(),
@@ -103,7 +106,7 @@ impl Files {
                     let name = name.to_string_lossy();
                     if name.to_lowercase().contains(&file_query) {
                         let metadata = x.metadata().unwrap();
-                        let (icon, desc, small_icon) =
+                        let (icon, desc, small_icon, app) =
                             get_file_info(app_database, &x.path(), &metadata);
 
                         return Some(Entry {
@@ -114,8 +117,10 @@ impl Files {
                             small_icon: EntryIcon::from(small_icon),
                             action: if metadata.is_dir() {
                                 EntryAction::Write(reduce_tilde(&x.path(), &self.home_dir) + "/")
+                            } else if let Some(app) = app {
+                                EntryAction::Open(app.id.clone(), Some(x.path()))
                             } else {
-                                EntryAction::Open(x.path())
+                                EntryAction::Nothing
                             },
                             sub_entries: HashMap::new(),
                             id: "".to_owned(),
@@ -130,11 +135,11 @@ impl Files {
     }
 }
 
-fn get_file_info(
-    database: &XdgAppDatabase,
+fn get_file_info<'a>(
+    database: &'a XdgAppDatabase,
     path: &Path,
     metadata: &Metadata,
-) -> (String, String, Option<String>) {
+) -> (String, String, Option<String>, Option<&'a DesktopEntry>) {
     if metadata.file_type().is_dir() {
         (
             "folder".to_owned(),
@@ -144,10 +149,12 @@ fn get_file_info(
             } else {
                 None
             },
+            None,
         )
     } else {
         let guess = database.mime_db.guess_mime_type().path(path).guess();
         let mime = guess.mime_type();
+        let app = database.default_for_mime(mime);
 
         let names = database.mime_db.lookup_icon_names(mime);
         (
@@ -173,6 +180,7 @@ fn get_file_info(
             } else {
                 None
             },
+            app,
         )
     }
 }

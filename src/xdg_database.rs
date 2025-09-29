@@ -1,13 +1,17 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::PathBuf,
+    process::{Command, Stdio},
 };
 
 use mime::Mime;
 use xdg::BaseDirectories;
 use xdg_mime::SharedMimeInfo;
 
-use crate::plugins::applications::{DesktopEntry, read_desktop_entries};
+use crate::{
+    plugins::applications::{DesktopEntry, read_desktop_entries},
+    utils::CommandExt,
+};
 
 pub struct XdgAppDatabase {
     pub app_map: HashMap<String, DesktopEntry>,
@@ -30,8 +34,14 @@ impl XdgAppDatabase {
     }
 }
 
+impl Default for XdgAppDatabase {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
-struct MimeAppsListFile {
+pub struct MimeAppsListFile {
     apps: Vec<String>,
     default: HashMap<String, HashSet<String>>,
     added: HashMap<String, HashSet<String>>,
@@ -117,6 +127,21 @@ pub fn default_mimeapps_paths() -> impl Iterator<Item = PathBuf> {
 }
 
 impl XdgAppDatabase {
+    pub fn default_for_mime(&self, mime: &Mime) -> Option<&DesktopEntry> {
+        let empty = HashSet::new();
+        for list in &self.mime_apps_lists {
+            for id in list.default.get(mime.essence_str()).unwrap_or(&empty) {
+                if let Some(app) = self.app_map.get(id) {
+                    return Some(app);
+                }
+            }
+        }
+
+        let openers = self.find_associations(mime);
+
+        openers.into_iter().next()
+    }
+
     pub fn find_associations(&self, mime: &Mime) -> Vec<&DesktopEntry> {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut openers = Vec::new();
@@ -179,5 +204,177 @@ impl XdgAppDatabase {
         }
 
         openers
+    }
+
+    fn terminal_emulator(&self) -> Option<&DesktopEntry> {
+        if let Some(emulator) = self.default_for_mime(&"x-scheme-handler/terminal".parse().unwrap())
+        {
+            return Some(emulator);
+        }
+
+        println!(
+            "No default terminal emulator could be found, will fallback on the first terminal emulator we find. To learn how to set one for vicinae to use: https://docs.vicinae.com/default-terminal"
+        );
+
+        self.app_map.values().find(|x| x.is_terminal_emulator())
+    }
+
+    pub fn launch(&self, app: &DesktopEntry, args: &[String]) -> bool {
+        let exec = app.parse_exec(args, false);
+
+        if exec.is_empty() {
+            println!("No program to start the app");
+            return false;
+        }
+
+        let mut command = if app.terminal {
+            if let Some(emulator) = self.terminal_emulator() {
+                let program = emulator.program();
+                let mut command = Command::new(&program);
+
+                // because yes, gnome-terminal does not support -e properly
+                if program == "gnome-terminal" {
+                    command.arg("--");
+                } else {
+                    command.arg("-e");
+                }
+
+                for part in exec {
+                    command.arg(part);
+                }
+
+                command
+            } else {
+                return false;
+            }
+        } else {
+            let mut command = Command::new(&exec[0]);
+            for arg in &exec[1..] {
+                command.arg(arg);
+            }
+
+            command
+        };
+
+        command.stdout(Stdio::null());
+        command.stderr(Stdio::null());
+
+        if let Some(working_directory) = &app.working_directory {
+            command.current_dir(working_directory);
+        }
+
+        // command.setsid(true);
+
+        if let Err(error) = command.spawn_detached() {
+            println!("Failed to start app {:?} {:?}", command.get_args(), error);
+            return false;
+        }
+
+        true
+    }
+}
+
+pub struct ExecParser<'a> {
+    pub name: &'a str,
+    pub icon: Option<&'a str>,
+    pub force_append: bool,
+}
+
+impl ExecParser<'_> {
+    pub fn parse(&self, data: &str, uris: &[String]) -> Vec<String> {
+        let mut args = Vec::new();
+        enum State {
+            Reset,
+            FieldCode,
+            Escaped,
+            Quote,
+            QuotedEscaped,
+        }
+        let mut state = State::Reset;
+        let mut part = String::new();
+        let mut uri_expanded = false;
+        let mut quote_char = 0 as char; // the current quotation char
+
+        for ch in data.chars() {
+            match state {
+                State::Reset => match ch {
+                    '"' | '\'' => {
+                        state = State::Quote;
+                        quote_char = ch;
+                    }
+                    '%' => {
+                        state = State::FieldCode;
+                    }
+                    '\\' => {
+                        state = State::Escaped;
+                    }
+                    ch if ch.is_whitespace() => {
+                        if !part.is_empty() {
+                            args.push(part.clone());
+                            part.clear();
+                        }
+                    }
+                    ch => {
+                        part.push(ch);
+                    }
+                },
+                State::FieldCode => {
+                    match ch {
+                        '%' => {
+                            part.push('%');
+                        }
+                        'f' | 'u' => {
+                            uri_expanded = true;
+                            if let Some(uri) = uris.first() {
+                                args.push(uri.clone());
+                            }
+                        }
+                        'F' | 'U' => {
+                            uri_expanded = true;
+                            args.extend_from_slice(uris);
+                        }
+                        'i' => {
+                            if let Some(m_icon) = self.icon {
+                                args.push("--icon".to_owned());
+                                args.push(m_icon.to_owned());
+                            }
+                        }
+                        'c' => {
+                            args.push(self.name.to_owned());
+                        }
+                        _ => {}
+                    }
+
+                    state = State::Reset;
+                }
+
+                State::Escaped => {
+                    part.push(ch);
+                    state = State::Reset;
+                }
+                State::Quote => {
+                    if ch == '\\' {
+                        state = State::QuotedEscaped;
+                    } else if ch == quote_char {
+                        state = State::Reset;
+                    } else {
+                        part.push(ch);
+                    }
+                }
+                State::QuotedEscaped => {
+                    part.push(ch);
+                    state = State::Quote;
+                }
+            }
+        }
+
+        if !part.is_empty() {
+            args.push(part);
+        }
+        if !uri_expanded && self.force_append {
+            args.extend_from_slice(uris);
+        }
+
+        args
     }
 }

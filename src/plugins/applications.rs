@@ -10,6 +10,7 @@ use itertools::Itertools;
 use xdg::BaseDirectories;
 
 use crate::utils::IteratorExt;
+use crate::xdg_database::ExecParser;
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
 const FIELD_CODE_LIST: [&str; 13] = [
@@ -26,8 +27,9 @@ pub struct DesktopEntry {
     categories: Vec<String>,
     keywords: Vec<String>,
     actions: HashMap<String, DesktopEntryAction>,
+    pub working_directory: Option<PathBuf>,
     exec: Option<String>,
-    terminal: bool,
+    pub terminal: bool,
     pub(crate) mime_types: Vec<String>,
     frequency: u32,
 }
@@ -117,14 +119,8 @@ impl DesktopEntry {
                         .collect()
                 })
                 .unwrap_or_default(),
-            exec: value.exec().map(|exec| {
-                let mut exec = exec.to_string();
-
-                for field_code in FIELD_CODE_LIST {
-                    exec = exec.replace(field_code, "");
-                }
-                exec
-            }),
+            working_directory: value.path().map(PathBuf::from),
+            exec: value.exec().map(str::to_owned),
             terminal: value.terminal(),
             mime_types: value
                 .mime_type()
@@ -139,6 +135,10 @@ impl DesktopEntry {
                 .map(|x| (frequency.len() - x) as u32)
                 .unwrap_or(0),
         }
+    }
+
+    pub fn is_terminal_emulator(&self) -> bool {
+        self.categories.contains(&"TerminalEmulator".to_owned())
     }
 
     fn get_score(&self, query: &str, matcher: &SkimMatcherV2) -> Option<(u8, i64, Entry)> {
@@ -298,6 +298,25 @@ impl DesktopEntry {
                 ),
             })
     }
+
+    pub fn parse_exec(&self, uris: &[String], force_append: bool) -> Vec<String> {
+        let Some(exec) = &self.exec else {
+            return vec![];
+        };
+
+        let parser = ExecParser {
+            name: &self.name,
+            icon: self.icon.as_deref(),
+            force_append,
+        };
+
+        parser.parse(exec, uris)
+    }
+
+    pub fn program(&self) -> String {
+        let ss = self.parse_exec(&[], false);
+        ss.into_iter().next().unwrap_or_default()
+    }
 }
 
 fn color_fuzzy_match(string: &str, indices: Vec<usize>) -> String {
@@ -327,17 +346,7 @@ impl From<&DesktopEntry> for Entry {
             small_icon: EntryIcon::None,
             // sub_entries: value.actions.clone(),
             sub_entries: HashMap::new(),
-            action: match value.exec.clone() {
-                Some(exec) => {
-                    if value.terminal {
-                        let term = std::env::var("TERMINAL_EMULATOR").unwrap_or("xterm".to_owned());
-                        EntryAction::Shell(format!("{term} -e {exec}"), value.path.clone())
-                    } else {
-                        EntryAction::Shell(exec, value.path.clone())
-                    }
-                }
-                None => EntryAction::Nothing,
-            },
+            action: EntryAction::Open(value.id.clone(), None),
             id: "".to_owned(),
         }
     }
@@ -354,17 +363,7 @@ impl From<(&DesktopEntry, String)> for Entry {
             small_icon: EntryIcon::None,
             // sub_entries: value.actions.clone(),
             sub_entries: HashMap::new(),
-            action: match value.exec.clone() {
-                Some(exec) => {
-                    if value.terminal {
-                        let term = std::env::var("TERMINAL_EMULATOR").unwrap_or("xterm".to_owned());
-                        EntryAction::Shell(format!("{term} -e {exec}"), value.path.clone())
-                    } else {
-                        EntryAction::Shell(exec, value.path.clone())
-                    }
-                }
-                None => EntryAction::Nothing,
-            },
+            action: EntryAction::Open(value.id.clone(), None),
             id: "".to_owned(),
         }
     }

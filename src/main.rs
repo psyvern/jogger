@@ -699,8 +699,15 @@ impl AsyncComponent for AppModel {
                         EntryAction::Write(query) => {
                             self.search_entry.emit(query.clone());
                         }
-                        EntryAction::Open(path) => {
-                            if open::that_detached(path).is_ok() {
+                        EntryAction::Open(app, path) => {
+                            if let Some(app) = self.app_database.app_map.get(app) {
+                                self.app_database.launch(
+                                    app,
+                                    &match path {
+                                        Some(path) => vec![path.to_string_lossy().to_string()],
+                                        None => vec![],
+                                    },
+                                );
                                 sender.input(AppMsg::Hide);
                             }
                         }

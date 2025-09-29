@@ -34,7 +34,7 @@ pub enum EntryAction {
     Shell(String, Option<PathBuf>),
     Command(String, Option<PathBuf>),
     Write(String),
-    Open(PathBuf),
+    Open(String, Option<PathBuf>),
 }
 
 #[derive(Clone, Debug)]
