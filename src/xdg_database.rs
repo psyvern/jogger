@@ -1,7 +1,10 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    path::PathBuf,
-    process::{Command, Stdio},
+    fs::File,
+    io::Read,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::Command,
 };
 
 use mime::Mime;
@@ -126,6 +129,11 @@ pub fn default_mimeapps_paths() -> impl Iterator<Item = PathBuf> {
     ]
 }
 
+pub struct Guess {
+    pub mime: Mime,
+    pub uncertain: bool,
+}
+
 impl XdgAppDatabase {
     pub fn default_for_mime(&self, mime: &Mime) -> Option<&DesktopEntry> {
         let empty = HashSet::new();
@@ -140,6 +148,244 @@ impl XdgAppDatabase {
         let openers = self.find_associations(mime);
 
         openers.into_iter().next()
+    }
+
+    pub fn common_ancestor(&self, a: &Mime, b: &Mime) -> Option<Mime> {
+        let mut stack = VecDeque::new();
+        stack.push_back(a.clone());
+
+        let mut ancestors = Vec::new();
+        while let Some(x) = stack.pop_front() {
+            if let Some(parents) = self
+                .mime_db
+                .get_parents(&x)
+                .or_else(|| self.mime_db.get_parents_aliased(&x))
+            {
+                for parent in parents {
+                    stack.push_back(parent);
+                }
+            }
+
+            ancestors.push(x);
+        }
+
+        stack.push_back(b.clone());
+
+        while let Some(x) = stack.pop_front() {
+            if ancestors.contains(&x) {
+                return Some(x);
+            }
+            if let Some(parents) = self
+                .mime_db
+                .get_parents(&x)
+                .or_else(|| self.mime_db.get_parents_aliased(&x))
+            {
+                for parent in parents.clone() {
+                    stack.push_back(parent);
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn common_ancestor_multiple<'a, I: Iterator<Item = &'a Mime>>(
+        &self,
+        mut mimes: I,
+    ) -> Option<Mime> {
+        let mut acc = mimes.next().cloned();
+
+        for item in mimes {
+            match acc {
+                None => return None,
+                Some(x) => acc = self.common_ancestor(&x, item),
+            }
+        }
+        acc
+    }
+
+    pub fn guess<P: AsRef<Path>>(&self, path: P) -> Guess {
+        // Fill out the metadata
+        let metadata = match std::fs::metadata(&path) {
+            Ok(m) => Some(m),
+            Err(_) => None,
+        };
+
+        fn load_data_chunk<P: AsRef<Path>>(path: P, chunk_size: usize) -> Option<Vec<u8>> {
+            if chunk_size == 0 {
+                return None;
+            }
+
+            let mut f = match File::open(&path) {
+                Ok(file) => file,
+                Err(_) => return None,
+            };
+
+            let mut buf = vec![0u8; chunk_size];
+
+            if f.read_exact(&mut buf).is_err() {
+                return None;
+            }
+
+            Some(buf)
+        }
+
+        // Load the minimum amount of data necessary for a match
+        // let mut max_data_size = xdg_mime::magic::max_extents(&self.mime_db.magic);
+        let mut max_data_size = 1;
+
+        if let Some(metadata) = &metadata {
+            let file_size: usize = metadata.len() as usize;
+            if file_size < max_data_size {
+                max_data_size = file_size;
+            }
+        }
+
+        let data = load_data_chunk(&path, max_data_size).unwrap_or_default();
+
+        // Set the file name
+        let file_name = if let Some(file_name) = path.as_ref().file_name() {
+            file_name.to_os_string().into_string().ok()
+        } else {
+            None
+        };
+
+        if let Some(metadata) = &metadata {
+            let file_type = metadata.file_type();
+
+            // Special type for directories
+            if file_type.is_dir() {
+                return Guess {
+                    mime: "inode/directory".parse().unwrap(),
+                    uncertain: true,
+                };
+            }
+
+            // Special type for symbolic links
+            if file_type.is_symlink() {
+                return Guess {
+                    mime: "inode/symlink".parse().unwrap(),
+                    uncertain: true,
+                };
+            }
+
+            // Special type for empty files
+            if metadata.len() == 0 {
+                return Guess {
+                    mime: "application/x-zerosize".parse().unwrap(),
+                    uncertain: true,
+                };
+            }
+        }
+
+        let mut name_mime_types: Vec<Mime> = match &file_name {
+            Some(file_name) => self.mime_db.get_mime_types_from_file_name(file_name),
+            None => Vec::new(),
+        };
+
+        // File name match, and no conflicts
+        if name_mime_types.len() == 1 {
+            if name_mime_types[0] == mime::APPLICATION_OCTET_STREAM {
+                name_mime_types = vec![];
+            } else {
+                return Guess {
+                    mime: name_mime_types[0].clone(),
+                    uncertain: false,
+                };
+            }
+        }
+
+        let sniffed_mime = self.mime_db.get_mime_type_for_data(&data);
+
+        if name_mime_types.is_empty() {
+            // No names and no data => unknown MIME type
+            if data.is_empty() {
+                return Guess {
+                    mime: mime::APPLICATION_OCTET_STREAM,
+                    uncertain: true,
+                };
+            }
+
+            if let Some((mime, _)) = sniffed_mime {
+                return Guess {
+                    mime,
+                    uncertain: false,
+                };
+            }
+        } else {
+            if let Some((mut mime, priority)) = sniffed_mime {
+                // "If no magic rule matches the data (or if the content is not
+                // available), use the default type of application/octet-stream
+                // for binary data, or text/plain for textual data."
+                // -- shared-mime-info, "Recommended checking order"
+                // if mime == mime::APPLICATION_OCTET_STREAM && !data.is_empty() && looks_like_text(&data)
+                // {
+                //     mime = mime::TEXT_PLAIN;
+                // }
+
+                // From the content type guessing implementation in GIO:
+                //
+                // For security reasons we don't ever want to sniff desktop files
+                // where we know the filename and it doesn't have a .desktop extension.
+                // This is because desktop files allow executing any application and
+                // we don't want to make it possible to hide them looking like something
+                // else.
+                if file_name.is_some() {
+                    let x_desktop = "application/x-desktop".parse::<Mime>().unwrap();
+
+                    if mime == x_desktop {
+                        mime = mime::TEXT_PLAIN;
+                    }
+                }
+
+                // We found a match with a high confidence value
+                if priority >= 80 {
+                    return Guess {
+                        mime,
+                        uncertain: false,
+                    };
+                }
+
+                // We have possible conflicts, but the data matches the
+                // file name, so let's see if the sniffed MIME type is
+                // a subclass of the MIME type associated to the file name,
+                // and use that as a tie breaker.
+                if name_mime_types
+                    .iter()
+                    .any(|m| self.mime_db.mime_type_subclass(&mime, m))
+                {
+                    return Guess {
+                        mime,
+                        uncertain: false,
+                    };
+                }
+            }
+
+            // If there are conflicts, and the data does not help us,
+            // we get the nearest common ancestor from the file name
+            if let Some(mime_type) = self.common_ancestor_multiple(name_mime_types.iter()) {
+                return Guess {
+                    mime: mime_type.clone(),
+                    uncertain: true,
+                };
+            }
+        }
+
+        if let Some(metadata) = &metadata {
+            // Special type for executable files
+            if metadata.permissions().mode() & 0o111 != 0 && path.as_ref().extension().is_none() {
+                return Guess {
+                    mime: "application/x-executable".parse().unwrap(),
+                    uncertain: true,
+                };
+            }
+        }
+
+        // Okay, we give up
+        Guess {
+            mime: mime::APPLICATION_OCTET_STREAM,
+            uncertain: true,
+        }
     }
 
     pub fn find_associations(&self, mime: &Mime) -> Vec<&DesktopEntry> {
@@ -256,14 +502,9 @@ impl XdgAppDatabase {
             command
         };
 
-        command.stdout(Stdio::null());
-        command.stderr(Stdio::null());
-
         if let Some(working_directory) = &app.working_directory {
             command.current_dir(working_directory);
         }
-
-        // command.setsid(true);
 
         if let Err(error) = command.spawn_detached() {
             println!("Failed to start app {:?} {:?}", command.get_args(), error);

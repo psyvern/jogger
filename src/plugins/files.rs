@@ -152,11 +152,11 @@ fn get_file_info<'a>(
             None,
         )
     } else {
-        let guess = database.mime_db.guess_mime_type().path(path).guess();
-        let mime = guess.mime_type();
-        let app = database.default_for_mime(mime);
+        let guess = database.guess(path);
+        let mime = guess.mime;
+        let app = database.default_for_mime(&mime);
 
-        let names = database.mime_db.lookup_icon_names(mime);
+        let names = database.mime_db.lookup_icon_names(&mime);
         (
             names
                 .iter()
@@ -172,7 +172,7 @@ fn get_file_info<'a>(
                 .to_owned(),
             database
                 .mime_db
-                .get_comment(mime)
+                .get_comment(&mime)
                 .cloned()
                 .unwrap_or(String::new()),
             if metadata.file_type().is_symlink() {
