@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs::File,
     io::Read,
-    os::unix::fs::PermissionsExt,
+    os::{linux::fs::MetadataExt, unix::fs::PermissionsExt},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -230,19 +230,6 @@ impl XdgAppDatabase {
             Some(buf)
         }
 
-        // Load the minimum amount of data necessary for a match
-        // let mut max_data_size = xdg_mime::magic::max_extents(&self.mime_db.magic);
-        let mut max_data_size = 1;
-
-        if let Some(metadata) = &metadata {
-            let file_size: usize = metadata.len() as usize;
-            if file_size < max_data_size {
-                max_data_size = file_size;
-            }
-        }
-
-        let data = load_data_chunk(&path, max_data_size).unwrap_or_default();
-
         // Set the file name
         let file_name = if let Some(file_name) = path.as_ref().file_name() {
             file_name.to_os_string().into_string().ok()
@@ -255,6 +242,18 @@ impl XdgAppDatabase {
 
             // Special type for directories
             if file_type.is_dir() {
+                // Special type for mount points
+                if let Some(parent) = path.as_ref().parent() {
+                    if let Ok(parent_metadata) = std::fs::metadata(parent) {
+                        if metadata.st_dev() != parent_metadata.st_dev() {
+                            return Guess {
+                                mime: "inode/mount-point".parse().unwrap(),
+                                uncertain: true,
+                            };
+                        }
+                    }
+                }
+
                 return Guess {
                     mime: "inode/directory".parse().unwrap(),
                     uncertain: true,
@@ -294,6 +293,19 @@ impl XdgAppDatabase {
                 };
             }
         }
+
+        // Load the minimum amount of data necessary for a match
+        // let mut max_data_size = xdg_mime::magic::max_extents(&self.mime_db.magic);
+        let mut max_data_size = 1;
+
+        if let Some(metadata) = &metadata {
+            let file_size: usize = metadata.len() as usize;
+            if file_size < max_data_size {
+                max_data_size = file_size;
+            }
+        }
+
+        let data = load_data_chunk(&path, max_data_size).unwrap_or_default();
 
         let sniffed_mime = self.mime_db.get_mime_type_for_data(&data);
 
@@ -478,12 +490,7 @@ impl XdgAppDatabase {
                 let program = emulator.program();
                 let mut command = Command::new(&program);
 
-                // because yes, gnome-terminal does not support -e properly
-                if program == "gnome-terminal" {
-                    command.arg("--");
-                } else {
-                    command.arg("-e");
-                }
+                command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
 
                 for part in exec {
                     command.arg(part);

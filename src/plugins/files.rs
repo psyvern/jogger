@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, fs::Metadata, os::unix::fs::MetadataExt, path::Path};
+use std::{collections::HashMap, fmt::Debug, fs::Metadata, path::Path};
 
 use itertools::Itertools;
 
@@ -38,10 +38,15 @@ impl Files {
         query: &str,
         app_database: &'a XdgAppDatabase,
     ) -> std::io::Result<Box<dyn Iterator<Item = Entry> + 'a>> {
+        let query = if query.starts_with('~') && !query.starts_with("~/") {
+            &("~/".to_owned() + &query[1..])
+        } else {
+            query
+        };
         let path = expanduser::expanduser(query)?;
-        if std::fs::exists(&path)? {
-            let file = std::fs::File::open(&path)?;
-            let metadata = file.metadata()?;
+        if query.ends_with('/') {
+            let metadata = std::fs::metadata(&path)?;
+            let path = path.canonicalize()?;
             if metadata.is_dir() {
                 return Ok(Box::new(
                     path.parent()
@@ -92,46 +97,53 @@ impl Files {
                         ),
                 ));
             }
-            Ok(Box::new(std::iter::empty()))
-        } else {
-            if let (Some(path), Some(file_query)) = (path.parent(), path.file_name()) {
-                let file_query = file_query.to_string_lossy().to_lowercase();
-                let path = path.to_path_buf();
-                return Ok(Box::new(std::fs::read_dir(&path)?.flat_map(move |x| {
-                    let Ok(x) = x else {
-                        return None;
-                    };
-
-                    let name = x.file_name();
-                    let name = name.to_string_lossy();
-                    if name.to_lowercase().contains(&file_query) {
-                        let metadata = x.metadata().unwrap();
-                        let (icon, desc, small_icon, app) =
-                            get_file_info(app_database, &x.path(), &metadata);
-
-                        return Some(Entry {
-                            name: name.to_string(),
-                            tag: None,
-                            description: Some(desc),
-                            icon: EntryIcon::Name(icon),
-                            small_icon: EntryIcon::from(small_icon),
-                            action: if metadata.is_dir() {
-                                EntryAction::Write(reduce_tilde(&x.path(), &self.home_dir) + "/")
-                            } else if let Some(app) = app {
-                                EntryAction::Open(app.id.clone(), Some(x.path()))
-                            } else {
-                                EntryAction::Nothing
-                            },
-                            sub_entries: HashMap::new(),
-                            id: "".to_owned(),
-                        });
-                    }
-
-                    None
-                })));
-            }
-            Ok(Box::new(std::iter::empty()))
+            return Ok(Box::new(std::iter::empty()));
         }
+
+        let (path, file_query) = if query.ends_with("/.") {
+            (Some(path.as_path()), Some(".".to_owned()))
+        } else {
+            (
+                path.parent(),
+                path.file_name().map(|x| x.to_string_lossy().to_lowercase()),
+            )
+        };
+        if let (Some(path), Some(file_query)) = (path, file_query) {
+            return Ok(Box::new(std::fs::read_dir(path)?.flat_map(move |x| {
+                let Ok(x) = x else {
+                    return None;
+                };
+
+                let name = x.file_name();
+                let name = name.to_string_lossy();
+                if name.to_lowercase().contains(&file_query) {
+                    let metadata = x.metadata().unwrap();
+                    let (icon, desc, small_icon, app) =
+                        get_file_info(app_database, &x.path(), &metadata);
+
+                    return Some(Entry {
+                        name: name.to_string(),
+                        tag: None,
+                        description: Some(desc),
+                        icon: EntryIcon::Name(icon),
+                        small_icon: EntryIcon::from(small_icon),
+                        action: if metadata.is_dir() {
+                            EntryAction::Write(reduce_tilde(&x.path(), &self.home_dir) + "/")
+                        } else if let Some(app) = app {
+                            EntryAction::Open(app.id.clone(), Some(x.path()))
+                        } else {
+                            EntryAction::Nothing
+                        },
+                        sub_entries: HashMap::new(),
+                        id: "".to_owned(),
+                    });
+                }
+
+                None
+            })));
+        }
+
+        Ok(Box::new(std::iter::empty()))
     }
 }
 
@@ -140,49 +152,28 @@ fn get_file_info<'a>(
     path: &Path,
     metadata: &Metadata,
 ) -> (String, String, Option<String>, Option<&'a DesktopEntry>) {
-    if metadata.file_type().is_dir() {
-        (
-            "folder".to_owned(),
-            "Folder".to_owned(),
-            if metadata.file_type().is_symlink() {
-                Some("emblem-link".to_owned())
-            } else {
-                None
-            },
-            None,
-        )
-    } else {
-        let guess = database.guess(path);
-        let mime = guess.mime;
-        let app = database.default_for_mime(&mime);
+    let guess = database.guess(path);
+    let mime = guess.mime;
+    let app = database.default_for_mime(&mime);
 
-        let names = database.mime_db.lookup_icon_names(&mime);
-        (
-            names
-                .iter()
-                .find(|x| *x != "application-x-zerosize")
-                .map_or(
-                    if metadata.size() == 0 {
-                        "application-x-zerosize"
-                    } else {
-                        "application-x-generic"
-                    },
-                    |x| x,
-                )
-                .to_owned(),
-            database
-                .mime_db
-                .get_comment(&mime)
-                .cloned()
-                .unwrap_or(String::new()),
-            if metadata.file_type().is_symlink() {
-                Some("emblem-link".to_owned())
-            } else {
-                None
-            },
-            app,
-        )
-    }
+    let names = database.mime_db.lookup_icon_names(&mime);
+    (
+        names
+            .into_iter()
+            .next()
+            .unwrap_or("application-x-generic".to_owned()),
+        database
+            .mime_db
+            .get_comment(&mime)
+            .cloned()
+            .unwrap_or(String::new()),
+        if metadata.file_type().is_symlink() {
+            Some("emblem-link".to_owned())
+        } else {
+            None
+        },
+        app,
+    )
 }
 
 impl Files {

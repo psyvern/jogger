@@ -30,8 +30,18 @@ pub struct DesktopEntry {
     pub working_directory: Option<PathBuf>,
     exec: Option<String>,
     pub terminal: bool,
+    pub terminal_args: TerminalArgs,
     pub(crate) mime_types: Vec<String>,
     frequency: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct TerminalArgs {
+    pub exec: Option<String>,
+    pub app_id: Option<String>,
+    pub title: Option<String>,
+    pub dir: Option<String>,
+    pub hold: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -122,6 +132,13 @@ impl DesktopEntry {
             working_directory: value.path().map(PathBuf::from),
             exec: value.exec().map(str::to_owned),
             terminal: value.terminal(),
+            terminal_args: TerminalArgs {
+                exec: value.desktop_entry("X-TerminalArgExec").map(str::to_owned),
+                app_id: value.desktop_entry("X-TerminalArgAppId").map(str::to_owned),
+                title: value.desktop_entry("X-TerminalArgTitle").map(str::to_owned),
+                dir: value.desktop_entry("X-TerminalArgDir").map(str::to_owned),
+                hold: value.desktop_entry("X-TerminalArgHold").map(str::to_owned),
+            },
             mime_types: value
                 .mime_type()
                 .unwrap_or_default()
