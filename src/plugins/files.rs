@@ -1,10 +1,9 @@
-use std::{collections::HashMap, fmt::Debug, fs::Metadata, path::Path};
+use std::{collections::HashMap, fmt::Debug, fs::DirEntry, path::Path};
 
 use itertools::Itertools;
 
 use crate::{
     interface::{Entry, EntryAction, EntryIcon},
-    plugins::applications::DesktopEntry,
     xdg_database::XdgAppDatabase,
 };
 
@@ -67,32 +66,7 @@ impl Files {
                         .chain(
                             std::fs::read_dir(&path)?
                                 .flatten()
-                                .flat_map(move |x| {
-                                    let metadata = x.metadata().ok()?;
-                                    let name = x.file_name();
-                                    let name = name.to_string_lossy();
-                                    let (icon, desc, small_icon, app) =
-                                        get_file_info(app_database, &x.path(), &metadata);
-
-                                    Some(Entry {
-                                        name: name.to_string(),
-                                        tag: None,
-                                        description: Some(desc),
-                                        icon: EntryIcon::Name(icon),
-                                        small_icon: EntryIcon::from(small_icon),
-                                        action: if metadata.is_dir() {
-                                            EntryAction::Write(
-                                                reduce_tilde(&x.path(), &self.home_dir) + "/",
-                                            )
-                                        } else if let Some(app) = app {
-                                            EntryAction::Open(app.id.clone(), Some(x.path()))
-                                        } else {
-                                            EntryAction::Nothing
-                                        },
-                                        sub_entries: HashMap::new(),
-                                        id: "".to_owned(),
-                                    })
-                                })
+                                .flat_map(move |x| self.file_to_entry(app_database, x))
                                 .sorted_by_cached_key(|x| x.name.clone()),
                         ),
                 ));
@@ -109,71 +83,57 @@ impl Files {
             )
         };
         if let (Some(path), Some(file_query)) = (path, file_query) {
-            return Ok(Box::new(std::fs::read_dir(path)?.flat_map(move |x| {
-                let Ok(x) = x else {
-                    return None;
-                };
-
-                let name = x.file_name();
-                let name = name.to_string_lossy();
-                if name.to_lowercase().contains(&file_query) {
-                    let metadata = x.metadata().unwrap();
-                    let (icon, desc, small_icon, app) =
-                        get_file_info(app_database, &x.path(), &metadata);
-
-                    return Some(Entry {
-                        name: name.to_string(),
-                        tag: None,
-                        description: Some(desc),
-                        icon: EntryIcon::Name(icon),
-                        small_icon: EntryIcon::from(small_icon),
-                        action: if metadata.is_dir() {
-                            EntryAction::Write(reduce_tilde(&x.path(), &self.home_dir) + "/")
-                        } else if let Some(app) = app {
-                            EntryAction::Open(app.id.clone(), Some(x.path()))
-                        } else {
-                            EntryAction::Nothing
-                        },
-                        sub_entries: HashMap::new(),
-                        id: "".to_owned(),
-                    });
-                }
-
-                None
-            })));
+            return Ok(Box::new(
+                std::fs::read_dir(path)?
+                    .flatten()
+                    .filter(move |x| {
+                        let name = x.file_name();
+                        let name = name.to_string_lossy();
+                        name.to_lowercase().contains(&file_query)
+                    })
+                    .flat_map(|x| self.file_to_entry(app_database, x)),
+            ));
         }
 
         Ok(Box::new(std::iter::empty()))
     }
-}
 
-fn get_file_info<'a>(
-    database: &'a XdgAppDatabase,
-    path: &Path,
-    metadata: &Metadata,
-) -> (String, String, Option<String>, Option<&'a DesktopEntry>) {
-    let guess = database.guess(path);
-    let mime = guess.mime;
-    let app = database.default_for_mime(&mime);
+    fn file_to_entry(&self, database: &XdgAppDatabase, entry: DirEntry) -> Option<Entry> {
+        let metadata = entry.metadata().ok()?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let mime = database.guess(entry.path()).mime;
 
-    let names = database.mime_db.lookup_icon_names(&mime);
-    (
-        names
-            .into_iter()
-            .next()
-            .unwrap_or("application-x-generic".to_owned()),
-        database
+        let app = database.default_for_mime(mime);
+        let icon = database.mime_db.lookup_icon_name(mime);
+        let desc = database
             .mime_db
-            .get_comment(&mime)
+            .get_comment(mime)
             .cloned()
-            .unwrap_or(String::new()),
-        if metadata.file_type().is_symlink() {
+            .unwrap_or_default();
+        let small_icon = if metadata.file_type().is_symlink() {
             Some("emblem-link".to_owned())
         } else {
             None
-        },
-        app,
-    )
+        };
+
+        Some(Entry {
+            name: name.to_string(),
+            tag: None,
+            description: Some(desc),
+            icon: EntryIcon::Name(icon),
+            small_icon: EntryIcon::from(small_icon),
+            action: if metadata.is_dir() || mime.as_str() == "inode/directory" {
+                EntryAction::Write(reduce_tilde(&entry.path(), &self.home_dir) + "/")
+            } else if let Some(app) = app {
+                EntryAction::Open(app.id.clone(), Some(entry.path()))
+            } else {
+                EntryAction::Nothing
+            },
+            sub_entries: HashMap::new(),
+            id: "".to_owned(),
+        })
+    }
 }
 
 impl Files {

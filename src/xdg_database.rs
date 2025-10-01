@@ -7,7 +7,8 @@ use std::{
     process::Command,
 };
 
-use mime::Mime;
+use itertools::Itertools;
+use mediatype::MediaTypeBuf as Mime;
 use xdg::BaseDirectories;
 use xdg_mime::SharedMimeInfo;
 
@@ -129,8 +130,8 @@ pub fn default_mimeapps_paths() -> impl Iterator<Item = PathBuf> {
     ]
 }
 
-pub struct Guess {
-    pub mime: Mime,
+pub struct Guess<'a> {
+    pub mime: &'a Mime,
     pub uncertain: bool,
 }
 
@@ -138,7 +139,7 @@ impl XdgAppDatabase {
     pub fn default_for_mime(&self, mime: &Mime) -> Option<&DesktopEntry> {
         let empty = HashSet::new();
         for list in &self.mime_apps_lists {
-            for id in list.default.get(mime.essence_str()).unwrap_or(&empty) {
+            for id in list.default.get(mime.as_str()).unwrap_or(&empty) {
                 if let Some(app) = self.app_map.get(id) {
                     return Some(app);
                 }
@@ -150,16 +151,16 @@ impl XdgAppDatabase {
         openers.into_iter().next()
     }
 
-    pub fn common_ancestor(&self, a: &Mime, b: &Mime) -> Option<Mime> {
+    pub fn common_ancestor<'a>(&'a self, a: &'a Mime, b: &'a Mime) -> Option<&'a Mime> {
         let mut stack = VecDeque::new();
-        stack.push_back(a.clone());
+        stack.push_back(a);
 
         let mut ancestors = Vec::new();
         while let Some(x) = stack.pop_front() {
             if let Some(parents) = self
                 .mime_db
-                .get_parents(&x)
-                .or_else(|| self.mime_db.get_parents_aliased(&x))
+                .get_parents(x)
+                .or_else(|| self.mime_db.get_parents_aliased(x))
             {
                 for parent in parents {
                     stack.push_back(parent);
@@ -169,7 +170,7 @@ impl XdgAppDatabase {
             ancestors.push(x);
         }
 
-        stack.push_back(b.clone());
+        stack.push_back(b);
 
         while let Some(x) = stack.pop_front() {
             if ancestors.contains(&x) {
@@ -177,8 +178,8 @@ impl XdgAppDatabase {
             }
             if let Some(parents) = self
                 .mime_db
-                .get_parents(&x)
-                .or_else(|| self.mime_db.get_parents_aliased(&x))
+                .get_parents(x)
+                .or_else(|| self.mime_db.get_parents_aliased(x))
             {
                 for parent in parents.clone() {
                     stack.push_back(parent);
@@ -190,21 +191,38 @@ impl XdgAppDatabase {
     }
 
     pub fn common_ancestor_multiple<'a, I: Iterator<Item = &'a Mime>>(
-        &self,
+        &'a self,
         mut mimes: I,
-    ) -> Option<Mime> {
-        let mut acc = mimes.next().cloned();
+    ) -> Option<&'a Mime> {
+        let mut acc = mimes.next();
 
         for item in mimes {
             match acc {
                 None => return None,
-                Some(x) => acc = self.common_ancestor(&x, item),
+                Some(x) => acc = self.common_ancestor(x, item),
             }
         }
         acc
     }
 
     pub fn guess<P: AsRef<Path>>(&self, path: P) -> Guess {
+        use mediatype::{Name, names::*};
+        use std::sync::LazyLock;
+
+        static INODE: Name = Name::new_unchecked("inode");
+        static INODEMOUNT_POINT: LazyLock<Mime> =
+            LazyLock::new(|| Mime::new(INODE, Name::new_unchecked("mount-point")));
+        static INODE_DIRECTORY: LazyLock<Mime> = LazyLock::new(|| Mime::new(INODE, DIRECTORY));
+        static INODE_SYMLINK: LazyLock<Mime> =
+            LazyLock::new(|| Mime::new(INODE, Name::new_unchecked("symlink")));
+        static APPLICATION_X_ZEROSIZE: LazyLock<Mime> =
+            LazyLock::new(|| Mime::new(APPLICATION, Name::new_unchecked("x-zerosize")));
+        static APPLICATION_X_EXECUTABLE: LazyLock<Mime> =
+            LazyLock::new(|| Mime::new(APPLICATION, Name::new_unchecked("x-executable")));
+        static APPLICATION_OCTET_STREAM: LazyLock<Mime> =
+            LazyLock::new(|| Mime::new(APPLICATION, OCTET_STREAM));
+        static TEXT_PLAIN: LazyLock<Mime> = LazyLock::new(|| Mime::new(TEXT, PLAIN));
+
         // Fill out the metadata
         let metadata = match std::fs::metadata(&path) {
             Ok(m) => Some(m),
@@ -212,10 +230,6 @@ impl XdgAppDatabase {
         };
 
         fn load_data_chunk<P: AsRef<Path>>(path: P, chunk_size: usize) -> Option<Vec<u8>> {
-            if chunk_size == 0 {
-                return None;
-            }
-
             let mut f = match File::open(&path) {
                 Ok(file) => file,
                 Err(_) => return None,
@@ -247,7 +261,7 @@ impl XdgAppDatabase {
                     if let Ok(parent_metadata) = std::fs::metadata(parent) {
                         if metadata.st_dev() != parent_metadata.st_dev() {
                             return Guess {
-                                mime: "inode/mount-point".parse().unwrap(),
+                                mime: &INODEMOUNT_POINT,
                                 uncertain: true,
                             };
                         }
@@ -255,7 +269,7 @@ impl XdgAppDatabase {
                 }
 
                 return Guess {
-                    mime: "inode/directory".parse().unwrap(),
+                    mime: &INODE_DIRECTORY,
                     uncertain: true,
                 };
             }
@@ -263,7 +277,7 @@ impl XdgAppDatabase {
             // Special type for symbolic links
             if file_type.is_symlink() {
                 return Guess {
-                    mime: "inode/symlink".parse().unwrap(),
+                    mime: &INODE_SYMLINK,
                     uncertain: true,
                 };
             }
@@ -271,52 +285,103 @@ impl XdgAppDatabase {
             // Special type for empty files
             if metadata.len() == 0 {
                 return Guess {
-                    mime: "application/x-zerosize".parse().unwrap(),
+                    mime: &APPLICATION_X_ZEROSIZE,
                     uncertain: true,
                 };
             }
         }
 
-        let mut name_mime_types: Vec<Mime> = match &file_name {
-            Some(file_name) => self.mime_db.get_mime_types_from_file_name(file_name),
-            None => Vec::new(),
-        };
+        let name_mime_types = file_name
+            .as_ref()
+            .map(|x| self.mime_db.get_mime_types_from_file_name(x))
+            .unwrap_or_default();
 
         // File name match, and no conflicts
         if name_mime_types.len() == 1 {
-            if name_mime_types[0] == mime::APPLICATION_OCTET_STREAM {
-                name_mime_types = vec![];
-            } else {
+            return Guess {
+                mime: name_mime_types[0],
+                uncertain: false,
+            };
+        }
+
+        if name_mime_types.is_empty() {
+            // Load the minimum amount of data necessary for a match
+            let mut max_data_size = self.mime_db.max_magic_length();
+
+            if let Some(metadata) = &metadata {
+                let file_size = metadata.len() as usize;
+                if file_size < max_data_size {
+                    max_data_size = file_size;
+                }
+            }
+
+            let Some(data) = load_data_chunk(&path, max_data_size) else {
+                // No names and no data => unknown MIME type
                 return Guess {
-                    mime: name_mime_types[0].clone(),
+                    mime: &APPLICATION_OCTET_STREAM,
+                    uncertain: true,
+                };
+            };
+
+            let sniffed_mime = self.mime_db.get_mime_type_for_data(&data);
+
+            if let Some(mime) = sniffed_mime.map(|x| x.0) {
+                return Guess {
+                    mime,
                     uncertain: false,
                 };
             }
-        }
 
-        // Load the minimum amount of data necessary for a match
-        // let mut max_data_size = xdg_mime::magic::max_extents(&self.mime_db.magic);
-        let mut max_data_size = 1;
-
-        if let Some(metadata) = &metadata {
-            let file_size: usize = metadata.len() as usize;
-            if file_size < max_data_size {
-                max_data_size = file_size;
+            fn looks_like_text(data: &[u8]) -> bool {
+                // "Checking the first 128 bytes of the file for ASCII
+                // control characters is a good way to guess whether a
+                // file is binary or text."
+                // -- shared-mime-info, "Recommended checking order"
+                !data
+                    .iter()
+                    .take(128)
+                    .any(|ch| ch.is_ascii_control() && !ch.is_ascii_whitespace())
             }
-        }
 
-        let data = load_data_chunk(&path, max_data_size).unwrap_or_default();
-
-        let sniffed_mime = self.mime_db.get_mime_type_for_data(&data);
-
-        if name_mime_types.is_empty() {
-            // No names and no data => unknown MIME type
-            if data.is_empty() {
+            // "If no magic rule matches the data (or if the content is not
+            // available), use the default type of application/octet-stream
+            // for binary data, or text/plain for textual data."
+            // -- shared-mime-info, "Recommended checking order"
+            if looks_like_text(&data) {
                 return Guess {
-                    mime: mime::APPLICATION_OCTET_STREAM,
+                    mime: &TEXT_PLAIN,
                     uncertain: true,
                 };
             }
+        } else {
+            let magic_entries = self
+                .mime_db
+                .magic
+                .iter()
+                .filter(|x| name_mime_types.contains(&&x.mime_type))
+                .collect_vec();
+
+            let mut max_size = magic_entries.iter().map(|x| x.max_extents()).max();
+
+            if let (Some(max), Some(metadata)) = (max_size, &metadata) {
+                let file_size = metadata.len() as usize;
+                if file_size < max {
+                    max_size = Some(file_size);
+                }
+            }
+
+            let Some(data) = max_size.and_then(|x| load_data_chunk(&path, x)) else {
+                // No names and no data => unknown MIME type
+                return Guess {
+                    mime: &APPLICATION_OCTET_STREAM,
+                    uncertain: true,
+                };
+            };
+
+            let sniffed_mime = magic_entries
+                .iter()
+                .find_map(|e| e.matches(&data))
+                .map(|v| (v.0, v.1));
 
             if let Some((mime, _)) = sniffed_mime {
                 return Guess {
@@ -324,60 +389,12 @@ impl XdgAppDatabase {
                     uncertain: false,
                 };
             }
-        } else {
-            if let Some((mut mime, priority)) = sniffed_mime {
-                // "If no magic rule matches the data (or if the content is not
-                // available), use the default type of application/octet-stream
-                // for binary data, or text/plain for textual data."
-                // -- shared-mime-info, "Recommended checking order"
-                // if mime == mime::APPLICATION_OCTET_STREAM && !data.is_empty() && looks_like_text(&data)
-                // {
-                //     mime = mime::TEXT_PLAIN;
-                // }
-
-                // From the content type guessing implementation in GIO:
-                //
-                // For security reasons we don't ever want to sniff desktop files
-                // where we know the filename and it doesn't have a .desktop extension.
-                // This is because desktop files allow executing any application and
-                // we don't want to make it possible to hide them looking like something
-                // else.
-                if file_name.is_some() {
-                    let x_desktop = "application/x-desktop".parse::<Mime>().unwrap();
-
-                    if mime == x_desktop {
-                        mime = mime::TEXT_PLAIN;
-                    }
-                }
-
-                // We found a match with a high confidence value
-                if priority >= 80 {
-                    return Guess {
-                        mime,
-                        uncertain: false,
-                    };
-                }
-
-                // We have possible conflicts, but the data matches the
-                // file name, so let's see if the sniffed MIME type is
-                // a subclass of the MIME type associated to the file name,
-                // and use that as a tie breaker.
-                if name_mime_types
-                    .iter()
-                    .any(|m| self.mime_db.mime_type_subclass(&mime, m))
-                {
-                    return Guess {
-                        mime,
-                        uncertain: false,
-                    };
-                }
-            }
 
             // If there are conflicts, and the data does not help us,
             // we get the nearest common ancestor from the file name
-            if let Some(mime_type) = self.common_ancestor_multiple(name_mime_types.iter()) {
+            if let Some(mime) = self.common_ancestor_multiple(name_mime_types.iter().copied()) {
                 return Guess {
-                    mime: mime_type.clone(),
+                    mime,
                     uncertain: true,
                 };
             }
@@ -387,7 +404,7 @@ impl XdgAppDatabase {
             // Special type for executable files
             if metadata.permissions().mode() & 0o111 != 0 && path.as_ref().extension().is_none() {
                 return Guess {
-                    mime: "application/x-executable".parse().unwrap(),
+                    mime: &APPLICATION_X_EXECUTABLE,
                     uncertain: true,
                 };
             }
@@ -395,7 +412,7 @@ impl XdgAppDatabase {
 
         // Okay, we give up
         Guess {
-            mime: mime::APPLICATION_OCTET_STREAM,
+            mime: &APPLICATION_OCTET_STREAM,
             uncertain: true,
         }
     }
@@ -405,15 +422,15 @@ impl XdgAppDatabase {
         let mut openers = Vec::new();
         let mut mime_stack = VecDeque::new();
 
-        mime_stack.push_back(mime.clone());
+        mime_stack.push_back(mime);
 
         let empty_set = HashSet::new();
 
         while let Some(mime) = mime_stack.pop_front() {
             for parent in self
                 .mime_db
-                .get_parents(&mime)
-                .or_else(|| self.mime_db.get_parents_aliased(&mime))
+                .get_parents(mime)
+                .or_else(|| self.mime_db.get_parents_aliased(mime))
                 .unwrap_or_default()
             {
                 mime_stack.push_back(parent);
@@ -423,7 +440,7 @@ impl XdgAppDatabase {
 
             // perform a full file tour to find the default if there is one
             for list in self.mime_apps_lists.iter() {
-                for id in list.default.get(mime.essence_str()).unwrap_or(&empty_set) {
+                for id in list.default.get(mime.as_str()).unwrap_or(&empty_set) {
                     if let Some(app) = self.app_map.get(id) {
                         seen.insert(id);
                         openers.push(app);
@@ -433,7 +450,7 @@ impl XdgAppDatabase {
             }
 
             for list in self.mime_apps_lists.iter() {
-                for id in list.added.get(mime.essence_str()).unwrap_or(&empty_set) {
+                for id in list.added.get(mime.as_str()).unwrap_or(&empty_set) {
                     if removed.contains(&id) || seen.contains(id.as_str()) {
                         continue;
                     }
@@ -443,7 +460,7 @@ impl XdgAppDatabase {
                     }
                 }
 
-                for id in list.removed.get(mime.essence_str()).unwrap_or(&empty_set) {
+                for id in list.removed.get(mime.as_str()).unwrap_or(&empty_set) {
                     removed.insert(id);
                 }
 
@@ -452,7 +469,7 @@ impl XdgAppDatabase {
                         if removed.contains(id) || seen.contains(id.as_str()) {
                             continue;
                         }
-                        if app.mime_types.contains(&mime.essence_str().to_owned()) {
+                        if app.mime_types.contains(&mime.as_str().to_owned()) {
                             seen.insert(id);
                             openers.push(app);
                         }
@@ -464,7 +481,7 @@ impl XdgAppDatabase {
         openers
     }
 
-    fn terminal_emulator(&self) -> Option<&DesktopEntry> {
+    pub fn terminal_emulator(&self) -> Option<&DesktopEntry> {
         if let Some(emulator) = self.default_for_mime(&"x-scheme-handler/terminal".parse().unwrap())
         {
             return Some(emulator);

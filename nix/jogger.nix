@@ -41,7 +41,7 @@ in
       inherit lockFile;
 
       outputHashes = {
-        "xdg-mime-0.4.0" = "sha256-7l2rz7yFdXzrYSL4vzgh5A8+nwJguy3hcp27eSmqgBY=";
+        "xdg-mime-0.4.0" = "sha256-qgpXepe7lycJ6Ga8O8uerPCPi6zsIuhkGKrQ5QBTVeA=";
       };
     };
 
