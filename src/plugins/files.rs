@@ -7,14 +7,9 @@ use crate::{
     xdg_database::XdgAppDatabase,
 };
 
+#[derive(Debug)]
 pub struct Files {
     home_dir: String,
-}
-
-impl Debug for Files {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Files {}")
-    }
 }
 
 fn reduce_tilde(path: &Path, home_dir: &str) -> String {
@@ -49,19 +44,21 @@ impl Files {
             if metadata.is_dir() {
                 return Ok(Box::new(
                     path.parent()
-                        .map(|x| {
-                            let x = reduce_tilde(x, &self.home_dir);
+                        .map(|parent| {
+                            let x = reduce_tilde(parent, &self.home_dir);
                             Entry {
                                 name: "..".to_string(),
                                 tag: None,
                                 description: Some("Go back".to_owned()),
                                 icon: EntryIcon::Name("back".to_owned()),
                                 small_icon: EntryIcon::None,
-                                actions: vec![EntryAction::Write(if x == "/" {
-                                    x
-                                } else {
-                                    x + "/"
-                                })],
+                                actions: vec![
+                                    EntryAction::Write(if x == "/" { x } else { x + "/" }),
+                                    EntryAction::Open(
+                                        app_database.file_browser.clone().unwrap(),
+                                        Some(parent.to_owned()),
+                                    ),
+                                ],
                                 id: "".to_owned(),
                             }
                         })
@@ -127,11 +124,15 @@ impl Files {
             icon: EntryIcon::Name(icon),
             small_icon: EntryIcon::from(small_icon),
             actions: if metadata.is_dir() || mime.as_str() == "inode/directory" {
-                vec![EntryAction::Write(
-                    reduce_tilde(&entry.path(), &self.home_dir) + "/",
-                )]
+                vec![
+                    EntryAction::Write(reduce_tilde(&entry.path(), &self.home_dir) + "/"),
+                    EntryAction::Open(database.file_browser.clone().unwrap(), Some(entry.path())),
+                ]
             } else if let Some(app) = app {
-                vec![EntryAction::Open(app.id.clone(), Some(entry.path()))]
+                vec![
+                    EntryAction::Open(app.id.clone(), Some(entry.path())),
+                    EntryAction::Open(database.file_browser.clone().unwrap(), Some(entry.path())),
+                ]
             } else {
                 vec![]
             },

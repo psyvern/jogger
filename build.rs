@@ -16,7 +16,8 @@ fn main() -> Result<()> {
         let line = line_result?;
         let line = Box::leak(line.into_boxed_str());
         let mut csv_iter = line.split(';');
-        let codepoint = csv_iter.next().expect("data is corrupt");
+        let codepoint = u32::from_str_radix(csv_iter.next().expect("data is corrupt"), 16)
+            .expect("data is corrupt");
         let name = {
             const CONTROL_VALUE: &str = "<control>";
             let mut name_in_file = csv_iter.next().expect("data is corrupt");
@@ -29,13 +30,13 @@ fn main() -> Result<()> {
                 name_in_file = csv_iter.next().expect("data is corrupt");
             }
             if name_in_file.is_empty() {
-                if codepoint == "0080" {
+                if codepoint == 0x80 {
                     "PADDING CHARACTER"
-                } else if codepoint == "0081" {
-                    "HIGH OCTET PRESET;"
-                } else if codepoint == "0084" {
+                } else if codepoint == 0x81 {
+                    "HIGH OCTET PRESET"
+                } else if codepoint == 0x84 {
                     "INDEX"
-                } else if codepoint == "0099" {
+                } else if codepoint == 0x99 {
                     "SINGLE GRAPHIC CHARACTER INTRODUCER"
                 } else {
                     CONTROL_VALUE
@@ -44,8 +45,7 @@ fn main() -> Result<()> {
                 name_in_file
             }
         };
-        let hex_codepoint = u32::from_str_radix(codepoint, 16).expect("number is corrupt");
-        if let Some(scalar) = std::char::from_u32(hex_codepoint) {
+        if let Some(scalar) = std::char::from_u32(codepoint) {
             vector.push(Char {
                 scalar,
                 codepoint,

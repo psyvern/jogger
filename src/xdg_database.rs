@@ -20,11 +20,12 @@ pub struct XdgAppDatabase {
     pub app_map: HashMap<String, DesktopEntry>,
     pub mime_apps_lists: Vec<MimeAppsListFile>,
     pub mime_db: SharedMimeInfo,
+    pub file_browser: Option<String>,
 }
 
 impl XdgAppDatabase {
     pub fn new() -> XdgAppDatabase {
-        XdgAppDatabase {
+        let mut database = XdgAppDatabase {
             app_map: read_desktop_entries()
                 .into_iter()
                 .map(|x| (x.id.clone(), x))
@@ -33,7 +34,14 @@ impl XdgAppDatabase {
                 .flat_map(MimeAppsListFile::from_path)
                 .collect(),
             mime_db: SharedMimeInfo::new(),
-        }
+            file_browser: None,
+        };
+
+        database.file_browser = database
+            .default_for_mime(&"inode/directory".parse().unwrap())
+            .map(|x| x.id.clone());
+
+        database
     }
 }
 

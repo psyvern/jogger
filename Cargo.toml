@@ -24,7 +24,6 @@ parking_lot = { version = "0.12.3", features = ["arc_lock"] }
 relm4 = "0.9.1"
 serde = "1.0.216"
 stoppable_thread = "0.2.1"
-titlecase = "3.6.0"
 tokio = { version = "1.42.0", features = ["time"] }
 tokio-util = "0.7.13"
 toml = "0.8.19"
