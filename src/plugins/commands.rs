@@ -1,8 +1,7 @@
 use crate::Plugin;
-use crate::interface::EntryIcon;
+use crate::interface::{Context, EntryIcon};
 
 use crate::{Entry, EntryAction};
-use std::collections::HashMap;
 use std::env;
 
 #[derive(Debug)]
@@ -11,7 +10,7 @@ pub struct Commands {
 }
 
 impl Commands {
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             shell: env::var("SHELL").ok(),
         }
@@ -31,16 +30,18 @@ impl Plugin for Commands {
         Some(">")
     }
 
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry>> {
-        Box::new(std::iter::once(Entry {
+    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
+        vec![Entry {
             name: format!("<tt>{}</tt>", gtk::glib::markup_escape_text(query.trim())),
             tag: None,
             description: self.shell.as_ref().map(|x| format!("<tt>{x}</tt>")),
             icon: EntryIcon::Name("terminal".to_owned()),
             small_icon: EntryIcon::None,
-            action: EntryAction::Shell(query.trim().into(), /* self.shell.clone(), */ None),
-            sub_entries: HashMap::new(),
+            actions: vec![EntryAction::Shell(
+                query.trim().into(),
+                /* self.shell.clone(), */ None,
+            )],
             id: "".to_owned(),
-        }))
+        }]
     }
 }

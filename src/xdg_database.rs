@@ -7,7 +7,6 @@ use std::{
     process::Command,
 };
 
-use itertools::Itertools;
 use mediatype::MediaTypeBuf as Mime;
 use xdg::BaseDirectories;
 use xdg_mime::SharedMimeInfo;
@@ -310,9 +309,7 @@ impl XdgAppDatabase {
 
             if let Some(metadata) = &metadata {
                 let file_size = metadata.len() as usize;
-                if file_size < max_data_size {
-                    max_data_size = file_size;
-                }
+                max_data_size = max_data_size.min(file_size);
             }
 
             let Some(data) = load_data_chunk(&path, max_data_size) else {
@@ -325,7 +322,7 @@ impl XdgAppDatabase {
 
             let sniffed_mime = self.mime_db.get_mime_type_for_data(&data);
 
-            if let Some(mime) = sniffed_mime.map(|x| x.0) {
+            if let Some((mime, _)) = sniffed_mime {
                 return Guess {
                     mime,
                     uncertain: false,
@@ -354,14 +351,16 @@ impl XdgAppDatabase {
                 };
             }
         } else {
-            let magic_entries = self
-                .mime_db
-                .magic
+            let magic_entries: HashMap<_, _> = name_mime_types
                 .iter()
-                .filter(|x| name_mime_types.contains(&&x.mime_type))
-                .collect_vec();
+                .flat_map(|x| self.mime_db.magic.get(x).map(|y| (x, y)))
+                .collect();
 
-            let mut max_size = magic_entries.iter().map(|x| x.max_extents()).max();
+            let mut max_size = magic_entries
+                .values()
+                .flat_map(|x| x.iter())
+                .map(|x| x.max_extents())
+                .max();
 
             if let (Some(max), Some(metadata)) = (max_size, &metadata) {
                 let file_size = metadata.len() as usize;
@@ -378,10 +377,18 @@ impl XdgAppDatabase {
                 };
             };
 
-            let sniffed_mime = magic_entries
-                .iter()
-                .find_map(|e| e.matches(&data))
-                .map(|v| (v.0, v.1));
+            let sniffed_mime = magic_entries.into_iter().find_map(|(key, value)| {
+                value
+                    .iter()
+                    .find_map(|x| {
+                        if x.matches(&data) {
+                            Some(x.priority)
+                        } else {
+                            None
+                        }
+                    })
+                    .map(|x| (key, x))
+            });
 
             if let Some((mime, _)) = sniffed_mime {
                 return Guess {

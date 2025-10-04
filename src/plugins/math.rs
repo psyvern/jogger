@@ -1,9 +1,10 @@
 use std::fmt::Write;
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 
 use fend_core::SpanKind;
 use itertools::Itertools;
 
+use crate::interface::Context;
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
 #[derive(Debug)]
@@ -12,7 +13,7 @@ pub struct Math {
 }
 
 impl Math {
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         let context = fend_core::Context::new();
         Self { context }
     }
@@ -35,7 +36,7 @@ impl Plugin for Math {
         Some("accessories-calculator")
     }
 
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry>> {
+    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
         let val = fend_core::evaluate_preview_with_interrupt(
             query,
             &mut self.context.clone(),
@@ -43,7 +44,7 @@ impl Plugin for Math {
         );
 
         if val.get_main_result().is_empty() && val.is_unit_type() {
-            Box::new(std::iter::empty())
+            Vec::new()
         } else {
             let mut spans = val.get_main_result_spans().collect_vec().into_iter();
             let first = spans.take_while_ref(|x| x.kind() == SpanKind::Ident).fold(
@@ -87,16 +88,15 @@ impl Plugin for Math {
                 description: Some(units),
                 icon: EntryIcon::Name("accessories-calculator".to_string()),
                 small_icon: EntryIcon::None,
-                sub_entries: HashMap::new(),
-                action: EntryAction::Copy(
+                actions: vec![EntryAction::Copy(
                     val.get_main_result()
                         .trim_start_matches("approx. ")
                         .to_owned(),
-                ),
+                )],
                 id: "".to_owned(),
             };
 
-            Box::new(std::iter::once(val))
+            vec![val]
         }
     }
 }

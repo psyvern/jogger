@@ -7,8 +7,6 @@ pub mod xdg_database;
 use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
 use dbus_crossroads::Crossroads;
-use futures::FutureExt;
-use futures::future::BoxFuture;
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -22,12 +20,12 @@ use std::time::Duration;
 use gtk::{
     Align, Box as GBox, Button, Grid, Image, Justification, Label, ListBox, ListBoxRow,
     Orientation::Vertical,
-    Overlay, Revealer, ScrolledWindow, ToggleButton, Window,
+    Overlay, ScrolledWindow, Window,
     gdk::{self},
     pango::EllipsizeMode,
     prelude::{
         AdjustmentExt, BoxExt, ButtonExt, EditableExt, GridExt, GtkWindowExt, ListBoxRowExt,
-        OrientableExt, ToggleButtonExt, WidgetExt,
+        OrientableExt, WidgetExt,
     },
 };
 use gtk_layer_shell::{KeyboardMode, Layer, LayerShell};
@@ -39,8 +37,9 @@ use relm4::{
 };
 use search_entry::{SearchEntryModel, SearchEntryMsg};
 
+use crate::interface::{Context, EntryIcon};
 use crate::plugins::files::Files;
-use crate::xdg_database::XdgAppDatabase;
+use crate::utils::CommandExt;
 
 #[derive(Debug, Clone)]
 enum GridEntryMsg {
@@ -93,11 +92,35 @@ impl FactoryComponent for GridEntryComponent {
             GBox {
                 set_orientation: Vertical,
 
-                self.entry.icon.to_gtk_image() {
-                    set_pixel_size: 48,
-                    set_vexpand: true,
-                    set_valign: Align::End,
-                    add_css_class: "icon",
+                append = match &self.entry.icon {
+                    EntryIcon::Name(value) => {
+                        Image {
+                            #[watch]
+                            set_icon_name: Some(value),
+                            set_pixel_size: 48,
+                            set_vexpand: true,
+                            set_valign: Align::End,
+                            add_css_class: "icon",
+                        }
+                    },
+                    EntryIcon::Path(value) => {
+                        Image {
+                            #[watch]
+                            set_from_file: Some(value),
+                            set_pixel_size: 48,
+                            set_vexpand: true,
+                            set_valign: Align::End,
+                            add_css_class: "icon",
+                        }
+                    },
+                    EntryIcon::Character(value) => {
+                        Label {
+                            #[watch]
+                            set_label: &value.to_string(),
+                            add_css_class: "icon",
+                        }
+                    },
+                    EntryIcon::None => Image::new(),
                 },
 
                 Label {
@@ -132,13 +155,11 @@ impl FactoryComponent for GridEntryComponent {
 struct ListEntryComponent {
     plugin: usize,
     entry: Rc<Entry>,
-    show_actions: bool,
     selected: bool,
 }
 
 #[derive(Debug)]
 enum EntryMsg {
-    ToggleAction(bool),
     Select,
     Unselect,
 }
@@ -167,10 +188,33 @@ impl FactoryComponent for ListEntryComponent {
                 GBox {
                     Overlay {
                         #[wrap(Some)]
-                        set_child = &self.entry.icon.to_gtk_image() {
-                            set_use_fallback: true,
-                            set_pixel_size: 48,
-                            add_css_class: "icon",
+                        set_child = match &self.entry.icon {
+                            EntryIcon::Name(value) => {
+                                Image {
+                                    #[watch]
+                                    set_icon_name: Some(value),
+                                    set_use_fallback: true,
+                                    set_pixel_size: 48,
+                                    add_css_class: "icon",
+                                }
+                            },
+                            EntryIcon::Path(value) => {
+                                Image {
+                                    #[watch]
+                                    set_from_file: Some(value),
+                                    set_use_fallback: true,
+                                    set_pixel_size: 48,
+                                    add_css_class: "icon",
+                                }
+                            },
+                            EntryIcon::Character(value) => {
+                                Label {
+                                    #[watch]
+                                    set_label: &value.to_string(),
+                                    add_css_class: "icon",
+                                }
+                            },
+                            EntryIcon::None => Image::new(),
                         },
 
                         add_overlay = &self.entry.small_icon.to_gtk_image() {
@@ -234,61 +278,7 @@ impl FactoryComponent for ListEntryComponent {
                             }
                         }
                     },
-
-                    ToggleButton {
-                        set_icon_name: "go-down-symbolic",
-                        set_visible: !self.entry.sub_entries.is_empty(),
-
-                        connect_toggled[sender] => move |x| sender.input(EntryMsg::ToggleAction(x.is_active()))
-                    }
                 },
-
-                Revealer {
-                    #[watch]
-                    set_reveal_child: self.show_actions,
-
-                    GBox {
-                        set_orientation: Vertical,
-
-                        Label {
-                            set_label: "Boi",
-                        },
-
-                        // #[iterate]
-                        // append: self.entry.actions.iter().map(|(_, action)| {
-                        //     let label = Label::builder()
-                        //         .label(&action.name)
-                        //         .halign(Align::Start)
-                        //         .build();
-                        //     let arg = action.exec.clone().unwrap_or_default();
-                        //     let button = Button::builder()
-                        //         .child(&label)
-                        //         .css_classes(["action"])
-                        //         .build();
-                        //     button.connect_clicked(move |_| {
-                        //         let current_dir = &std::env::current_dir().unwrap();
-
-                        //         Command::new("sh")
-                        //             .arg("-c")
-                        //             .arg(&arg)
-                        //             .current_dir(current_dir)
-                        //             // .current_dir(if let Some(path) = &entry.path {
-                        //             //     if path.exists() {
-                        //             //         path
-                        //             //     } else {
-                        //             //         current_dir
-                        //             //     }
-                        //             // } else {
-                        //             //     current_dir
-                        //             // })
-                        //             .spawn()
-                        //             .unwrap();
-                        //         std::process::exit(0);
-                        //     });
-                        //     button
-                        // })
-                    }
-                }
             },
         }
     }
@@ -297,14 +287,12 @@ impl FactoryComponent for ListEntryComponent {
         Self {
             plugin: value.0,
             entry: value.1,
-            show_actions: false,
             selected: index.current_index() == 0,
         }
     }
 
     fn update(&mut self, message: Self::Input, _: FactorySender<Self>) {
         match message {
-            EntryMsg::ToggleAction(x) => self.show_actions = x,
             EntryMsg::Select => self.selected = true,
             EntryMsg::Unselect => self.selected = false,
         }
@@ -328,8 +316,8 @@ enum MoveDirection {
 #[derive(Debug)]
 enum AppMsg {
     Search(String),
-    Activate(usize),
-    ActivateSelected,
+    Activate(usize, bool),
+    ActivateSelected(bool),
     ClearPrefix,
     Move(MoveDirection),
     ScrollToSelected,
@@ -349,7 +337,7 @@ struct AppModel {
     query: String,
     thread_handle: Option<stoppable_thread::StoppableHandle<()>>,
     plugins: Arc<RwLock<Vec<Box<dyn Plugin>>>>,
-    plugins_fn: Vec<fn() -> BoxFuture<'static, Box<dyn Plugin>>>,
+    plugins_fn: Vec<fn() -> Box<dyn Plugin>>,
     selected_plugin: Option<usize>,
     selected_entry: usize,
     list_entries: FactoryVecDeque<ListEntryComponent>,
@@ -357,7 +345,7 @@ struct AppModel {
     grid_size: usize,
     search_entry: Controller<SearchEntryModel>,
     visible: bool,
-    app_database: Arc<XdgAppDatabase>,
+    context: Arc<RwLock<Context>>,
 }
 
 impl AppModel {
@@ -372,7 +360,7 @@ impl AsyncComponent for AppModel {
     type Output = ();
     type CommandOutput = CommandMsg;
 
-    type Init = Vec<fn() -> BoxFuture<'static, Box<dyn Plugin>>>;
+    type Init = Vec<fn() -> Box<dyn Plugin>>;
 
     view! {
         Window {
@@ -433,7 +421,7 @@ impl AsyncComponent for AppModel {
                             set_can_focus: false,
 
                             connect_row_activated[sender] => move |_, row| {
-                                sender.input(AppMsg::Activate(row.index() as usize));
+                                sender.input(AppMsg::Activate(row.index() as usize, false));
                             },
                         },
                     }
@@ -464,6 +452,28 @@ impl AsyncComponent for AppModel {
                             .unwrap_or_default()
                     },
 
+                    Label {
+                        #[watch]
+                        set_label: &model.list_entries.get(model.selected_entry)
+                            .and_then(|entry| {
+                                let entry = &entry.entry;
+                                let action = entry.actions.first()?;
+                                Some(match action {
+                                    EntryAction::Command(name, _, _) => {
+                                        name.to_owned()
+                                    },
+                                    EntryAction::Open(_, None) => {
+                                        "Launch".to_owned()
+                                    },
+                                    EntryAction::Open(_, Some(_)) => {
+                                        "Open".to_owned()
+                                    }
+                                    _ => "ciao".to_owned(),
+                                })
+                            })
+                            .unwrap_or_default()
+                    },
+
                     append = &Image::from_icon_name("keyboard-return"),
                 },*/
             },
@@ -478,13 +488,13 @@ impl AsyncComponent for AppModel {
         let list_entries = FactoryVecDeque::builder()
             .launch(gtk::ListBox::default())
             .forward(sender.input_sender(), |index: DynamicIndex| {
-                AppMsg::Activate(index.current_index())
+                AppMsg::Activate(index.current_index(), false)
             });
 
         let grid_entries = FactoryVecDeque::<GridEntryComponent>::builder()
             .launch(Grid::default())
             .forward(sender.input_sender(), |output| {
-                AppMsg::Activate(output.current_index())
+                AppMsg::Activate(output.current_index(), false)
             });
 
         let grid_size = 5;
@@ -495,7 +505,7 @@ impl AsyncComponent for AppModel {
                 .forward(sender.input_sender(), |output| match output {
                     SearchEntryMsg::Change(query) => AppMsg::Search(query),
                     SearchEntryMsg::Move(direction) => AppMsg::Move(direction),
-                    SearchEntryMsg::Activate => AppMsg::ActivateSelected,
+                    SearchEntryMsg::Activate(second) => AppMsg::ActivateSelected(second),
                     SearchEntryMsg::UnselectPlugin => AppMsg::ClearPrefix,
                     SearchEntryMsg::Close => AppMsg::Hide,
                     SearchEntryMsg::Reload => AppMsg::Reload,
@@ -513,7 +523,7 @@ impl AsyncComponent for AppModel {
             grid_size,
             search_entry,
             visible: false,
-            app_database: Arc::new(XdgAppDatabase::new()),
+            context: Arc::new(RwLock::new(Context::default())),
         };
 
         let entries = model.list_entries.widget();
@@ -559,7 +569,7 @@ impl AsyncComponent for AppModel {
         });
         tokio::spawn(async move {
             for plugin in plugins {
-                sender.input(AppMsg::PluginLoaded(plugin().await));
+                sender.input(AppMsg::PluginLoaded(plugin()));
             }
         });
 
@@ -649,31 +659,66 @@ impl AsyncComponent for AppModel {
                     let plugins = self.plugins.clone();
                     let selected_plugin = self.selected_plugin;
                     let query = self.query.clone();
-                    let app_database = self.app_database.clone();
+                    let context = self.context.clone();
                     self.thread_handle = Some(stoppable_thread::spawn(move |stopped| {
+                        let mut context = context.write();
                         let entries = {
                             let plugins = plugins.read();
                             match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
                                 None => {
                                     if query.starts_with(['~', '/']) {
                                         Files::new()
-                                            .search(&query, &app_database)
+                                            .search(&query, &mut context)
                                             .map(|x| (999, x))
                                             .collect_vec()
                                     } else {
                                         plugins
                                             .iter()
                                             .enumerate()
-                                            .filter(|(_, x)| x.prefix().is_none())
-                                            .flat_map(|(i, x)| {
-                                                x.search(&query).map(move |x| (i, x))
+                                            .filter(|x| x.1.has_entry())
+                                            .filter(|x| {
+                                                x.1.name()
+                                                    .to_lowercase()
+                                                    .contains(&query.to_lowercase())
                                             })
+                                            .map(|(i, x)| {
+                                                (
+                                                    i,
+                                                    Entry {
+                                                        name: x.name().to_owned(),
+                                                        tag: None,
+                                                        description: None,
+                                                        icon: EntryIcon::from(
+                                                            x.icon().map(str::to_owned),
+                                                        ),
+                                                        small_icon: EntryIcon::None,
+                                                        actions: vec![EntryAction::ChangePlugin(
+                                                            Some(i),
+                                                        )],
+                                                        id: String::new(),
+                                                    },
+                                                )
+                                            })
+                                            .chain(
+                                                plugins
+                                                    .iter()
+                                                    .enumerate()
+                                                    .filter(|x| !x.1.has_entry())
+                                                    .filter(|(_, x)| x.prefix().is_none())
+                                                    .flat_map(|(i, x)| {
+                                                        x.search(&query, &mut context)
+                                                            .into_iter()
+                                                            .map(move |x| (i, x))
+                                                    }),
+                                            )
                                             .collect_vec()
                                     }
                                 }
-                                Some((i, plugin)) => {
-                                    plugin.search(&query).map(|x| (i, x)).collect_vec()
-                                }
+                                Some((i, plugin)) => plugin
+                                    .search(&query, &mut context)
+                                    .into_iter()
+                                    .map(|x| (i, x))
+                                    .collect_vec(),
                             }
                         };
 
@@ -685,23 +730,33 @@ impl AsyncComponent for AppModel {
                     sender.input(AppMsg::SearchResults(vec![]))
                 }
             }
-            AppMsg::Activate(index) => {
+            AppMsg::Activate(index, second) => {
                 let entry = if self.use_grid() {
                     self.grid_entries.get(index).map(|x| &x.entry)
                 } else {
                     self.list_entries.get(index).map(|x| &x.entry)
                 };
 
-                if let Some(entry) = entry {
-                    match &entry.action {
-                        EntryAction::Nothing => {}
+                if let Some(action) = entry.and_then(|x| {
+                    if second {
+                        x.actions.get(1)
+                    } else {
+                        x.actions.first()
+                    }
+                }) {
+                    match action {
                         EntryAction::Close => sender.input(AppMsg::Hide),
                         EntryAction::Write(query) => {
                             self.search_entry.emit(query.clone());
                         }
+                        EntryAction::ChangePlugin(plugin) => {
+                            self.selected_plugin = *plugin;
+                            self.search_entry.emit(String::new());
+                        }
                         EntryAction::Open(app, path) => {
-                            if let Some(app) = self.app_database.app_map.get(app) {
-                                self.app_database.launch(
+                            let context = self.context.read();
+                            if let Some(app) = context.apps.app_map.get(app) {
+                                context.apps.launch(
                                     app,
                                     &match path {
                                         Some(path) => vec![path.to_string_lossy().to_string()],
@@ -709,6 +764,26 @@ impl AsyncComponent for AppModel {
                                     },
                                 );
                                 sender.input(AppMsg::Hide);
+                            }
+                        }
+                        EntryAction::LaunchTerminal(cmd, args) => {
+                            if let Some(emulator) = self.context.read().apps.terminal_emulator() {
+                                let program = emulator.program();
+                                let mut command = Command::new(&program);
+
+                                command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
+
+                                command.arg(cmd);
+                                command.args(args);
+
+                                match command.spawn_detached() {
+                                    Err(error) => println!(
+                                        "Failed to start terminal {:?} {:?}",
+                                        command.get_args(),
+                                        error
+                                    ),
+                                    _ => sender.input(AppMsg::Hide),
+                                }
                             }
                         }
                         EntryAction::Copy(value) => {
@@ -741,7 +816,7 @@ impl AsyncComponent for AppModel {
                             //     )
                             //     .exec();
                         }
-                        EntryAction::Command(command, path) => {
+                        EntryAction::Command(_, command, path) => {
                             sender.input(AppMsg::Hide);
 
                             let mut iter = command.split_whitespace();
@@ -794,10 +869,12 @@ impl AsyncComponent for AppModel {
                     let plugins = self.plugins_fn.clone();
                     tokio::spawn(async move {
                         for plugin in plugins {
-                            sender.input(AppMsg::PluginLoaded(plugin().await));
+                            sender.input(AppMsg::PluginLoaded(plugin()));
                         }
                     });
                 }
+
+                self.context = Arc::new(RwLock::new(Context::default()));
 
                 sender.input(AppMsg::ScrollToStart);
             }
@@ -909,8 +986,8 @@ impl AsyncComponent for AppModel {
                     _ => self.selected_entry,
                 };
             }
-            AppMsg::ActivateSelected => {
-                sender.input(AppMsg::Activate(self.selected_entry));
+            AppMsg::ActivateSelected(second) => {
+                sender.input(AppMsg::Activate(self.selected_entry, second));
             }
             AppMsg::ClearPrefix => {
                 self.selected_plugin = None;
@@ -942,7 +1019,11 @@ impl AsyncComponent for AppModel {
                         .iter()
                         .enumerate()
                         .filter(|(_, x)| x.prefix().is_none())
-                        .flat_map(|(i, x)| x.search("").map(move |x| (i, Rc::new(x))))
+                        .flat_map(|(i, x)| {
+                            x.search("", &mut self.context.write())
+                                .into_iter()
+                                .map(move |x| (i, Rc::new(x)))
+                        })
                         .take(self.grid_size * self.grid_size);
 
                     let mut grid_entries = self.grid_entries.guard();
@@ -995,6 +1076,8 @@ fn start() {
         plugins::hyprland::Hyprland,
         plugins::math::Math,
         plugins::commands::Commands,
+        plugins::ssh::Ssh,
+        plugins::unicode::Unicode,
     ];
 
     let app = RelmApp::new("com.psyvern.jogger").with_args(Vec::new());
@@ -1018,11 +1101,11 @@ fn start() {
 macro_rules! plugin_vec {
     ( $( $x:path ),+ $(,)? ) => {
         {
-            let mut temp_vec: Vec<fn() -> BoxFuture<'static, Box<dyn Plugin>>> = Vec::new();
+            let mut temp_vec: Vec<fn() -> Box<dyn Plugin>> = Vec::new();
             $(
-                temp_vec.push(|| async {
-                    Box::new(<$x>::new().await) as Box<dyn Plugin>
-                }.boxed());
+                temp_vec.push(|| {
+                    Box::new(<$x>::new())
+                });
             )*
             temp_vec
         }

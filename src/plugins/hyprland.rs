@@ -8,7 +8,7 @@ use hyprland::{
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use crate::interface::{Entry, EntryAction, EntryIcon, Plugin};
+use crate::interface::{Context, Entry, EntryAction, EntryIcon, Plugin};
 
 #[derive(Debug)]
 pub struct Hyprland {
@@ -55,18 +55,25 @@ impl From<&HyprlandClient> for Entry {
             ),
             icon: EntryIcon::Name(value.path.clone().unwrap_or("image-missing".to_owned())),
             small_icon: EntryIcon::Name("window".to_owned()),
-            sub_entries: HashMap::new(),
-            action: EntryAction::Command(
-                format!("hyprctl dispatch focuswindow address:{}", value.address),
-                None,
-            ),
+            actions: vec![
+                EntryAction::Command(
+                    "Focus window".to_owned(),
+                    format!("hyprctl dispatch focuswindow address:{}", value.address),
+                    None,
+                ),
+                EntryAction::Command(
+                    "Close window".to_owned(),
+                    format!("hyprctl dispatch closewindow address:{}", value.address),
+                    None,
+                ),
+            ],
             id: value.address.to_string(),
         }
     }
 }
 
 impl Hyprland {
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         let locales = get_languages_from_env();
         let entries: HashMap<_, _> = freedesktop_desktop_entry::Iter::new(default_paths())
             .entries(Some(&locales))
@@ -100,6 +107,10 @@ impl Hyprland {
 impl Plugin for Hyprland {
     fn name(&self) -> &str {
         "Windows"
+    }
+
+    fn has_entry(&self) -> bool {
+        true
     }
 
     fn open(&mut self) {
@@ -153,18 +164,13 @@ impl Plugin for Hyprland {
         Some("window")
     }
 
-    fn prefix(&self) -> Option<&str> {
-        Some("w:")
-    }
-
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
+    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
         if query.is_empty() {
-            Box::new(
-                self.clients
-                    .iter()
-                    .sorted_by_cached_key(|x| (x.selection_status, x.workspace, x.position))
-                    .map(Entry::from),
-            )
+            self.clients
+                .iter()
+                .sorted_by_cached_key(|x| (x.selection_status, x.workspace, x.position))
+                .map(Entry::from)
+                .collect()
         } else {
             let matcher = fuzzy_matcher::skim::SkimMatcherV2::default().smart_case();
             // let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
@@ -174,26 +180,25 @@ impl Plugin for Hyprland {
             //     Normalization::Smart,
             //     AtomKind::Fuzzy,
             // );
-            Box::new(
-                self.clients
-                    .iter()
-                    .filter_map(|client| {
-                        let mut score = 0;
+            self.clients
+                .iter()
+                .filter_map(|client| {
+                    let mut score = 0;
 
-                        score += 4 * matcher.fuzzy_match(&client.title, query).unwrap_or(0);
+                    score += 4 * matcher.fuzzy_match(&client.title, query).unwrap_or(0);
 
-                        score += matcher.fuzzy_match(&client.class, query).unwrap_or(0);
+                    score += matcher.fuzzy_match(&client.class, query).unwrap_or(0);
 
-                        if score == 0 {
-                            None
-                        } else {
-                            Some((score, client))
-                        }
-                    })
-                    .sorted_by_cached_key(|(x, _)| *x)
-                    .rev()
-                    .map(|(_, x)| Entry::from(x)),
-            )
+                    if score == 0 {
+                        None
+                    } else {
+                        Some((score, client))
+                    }
+                })
+                .sorted_by_cached_key(|(x, _)| *x)
+                .rev()
+                .map(|(_, x)| Entry::from(x))
+                .collect()
         }
     }
 }

@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fmt::Debug, fs::DirEntry, path::Path};
+use std::{fmt::Debug, fs::DirEntry, path::Path};
 
 use itertools::Itertools;
 
 use crate::{
-    interface::{Entry, EntryAction, EntryIcon},
+    interface::{Context, Entry, EntryAction, EntryIcon},
     xdg_database::XdgAppDatabase,
 };
 
@@ -57,8 +57,11 @@ impl Files {
                                 description: Some("Go back".to_owned()),
                                 icon: EntryIcon::Name("back".to_owned()),
                                 small_icon: EntryIcon::None,
-                                action: EntryAction::Write(if x == "/" { x } else { x + "/" }),
-                                sub_entries: HashMap::new(),
+                                actions: vec![EntryAction::Write(if x == "/" {
+                                    x
+                                } else {
+                                    x + "/"
+                                })],
                                 id: "".to_owned(),
                             }
                         })
@@ -123,14 +126,15 @@ impl Files {
             description: Some(desc),
             icon: EntryIcon::Name(icon),
             small_icon: EntryIcon::from(small_icon),
-            action: if metadata.is_dir() || mime.as_str() == "inode/directory" {
-                EntryAction::Write(reduce_tilde(&entry.path(), &self.home_dir) + "/")
+            actions: if metadata.is_dir() || mime.as_str() == "inode/directory" {
+                vec![EntryAction::Write(
+                    reduce_tilde(&entry.path(), &self.home_dir) + "/",
+                )]
             } else if let Some(app) = app {
-                EntryAction::Open(app.id.clone(), Some(entry.path()))
+                vec![EntryAction::Open(app.id.clone(), Some(entry.path()))]
             } else {
-                EntryAction::Nothing
+                vec![]
             },
-            sub_entries: HashMap::new(),
             id: "".to_owned(),
         })
     }
@@ -148,9 +152,9 @@ impl Files {
     pub fn search<'a>(
         &'a self,
         query: &str,
-        app_database: &'a XdgAppDatabase,
+        context: &'a mut Context,
     ) -> Box<dyn Iterator<Item = Entry> + 'a> {
-        self.search_inner(query, app_database)
+        self.search_inner(query, &context.apps)
             .unwrap_or(Box::new(std::iter::empty()))
     }
 }

@@ -1,9 +1,11 @@
-use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
 
 use gtk::Image;
+
+use crate::xdg_database::XdgAppDatabase;
 
 pub trait Plugin: Debug + Send + Sync {
     fn open(&mut self) {}
@@ -18,23 +20,29 @@ pub trait Plugin: Debug + Send + Sync {
         None
     }
 
-    fn search(&self, _query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
-        Box::new(std::iter::empty())
+    #[allow(unused)]
+    fn search(&self, query: &str, context: &mut Context) -> Vec<Entry> {
+        Vec::new()
     }
 
     fn select(&self, _entry: &Entry) {}
+
+    fn has_entry(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum EntryAction {
-    Nothing,
     Close,
     Copy(String),
     HyprctlExec(String),
     Shell(String, Option<PathBuf>),
-    Command(String, Option<PathBuf>),
+    Command(String, String, Option<PathBuf>),
+    LaunchTerminal(String, Vec<String>),
     Write(String),
     Open(String, Option<PathBuf>),
+    ChangePlugin(Option<usize>),
 }
 
 #[derive(Clone, Debug)]
@@ -44,8 +52,7 @@ pub struct Entry {
     pub description: Option<String>,
     pub icon: EntryIcon,
     pub small_icon: EntryIcon,
-    pub sub_entries: HashMap<String, SubEntry>,
-    pub action: EntryAction,
+    pub actions: Vec<EntryAction>,
     pub id: String,
 }
 
@@ -53,6 +60,7 @@ pub struct Entry {
 pub enum EntryIcon {
     Name(String),
     Path(PathBuf),
+    Character(char),
     #[default]
     None,
 }
@@ -61,16 +69,14 @@ impl EntryIcon {
     pub fn to_name(&self) -> Option<&str> {
         match self {
             EntryIcon::Name(value) => Some(value),
-            EntryIcon::Path(_) => None,
-            EntryIcon::None => None,
+            _ => None,
         }
     }
 
     pub fn to_path(&self) -> Option<&Path> {
         match self {
-            EntryIcon::Name(_) => None,
             EntryIcon::Path(value) => Some(value),
-            EntryIcon::None => None,
+            _ => None,
         }
     }
 
@@ -78,7 +84,7 @@ impl EntryIcon {
         match self {
             EntryIcon::Name(value) => Image::from_icon_name(value),
             EntryIcon::Path(value) => Image::from_file(value),
-            EntryIcon::None => Image::new(),
+            _ => Image::new(),
         }
     }
 }
@@ -105,4 +111,24 @@ impl From<Option<PathBuf>> for EntryIcon {
 pub struct SubEntry {
     pub name: String,
     pub action: EntryAction,
+}
+
+pub struct Context {
+    messages: VecDeque<String>,
+    pub apps: XdgAppDatabase,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self {
+            messages: VecDeque::new(),
+            apps: XdgAppDatabase::new(),
+        }
+    }
+}
+
+impl Context {
+    pub fn show_dialog(&mut self, message: &str) {
+        self.messages.push_back(message.to_owned());
+    }
 }

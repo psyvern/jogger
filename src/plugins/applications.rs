@@ -9,6 +9,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
+use crate::interface::Context;
 use crate::utils::IteratorExt;
 use crate::xdg_database::ExecParser;
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
@@ -122,7 +123,7 @@ impl DesktopEntry {
                                             // TODO: add other fields
                                             EntryAction::Shell(exec, None)
                                         })
-                                        .unwrap_or(EntryAction::Nothing),
+                                        .unwrap_or(EntryAction::Shell(String::new(), None)),
                                 },
                             ))
                         })
@@ -257,8 +258,7 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        sub_entries: HashMap::new(),
-                        action: action.action.clone(),
+                        actions: vec![action.action.clone()],
                         id: "".to_owned(),
                     },
                 ),
@@ -273,8 +273,7 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        sub_entries: HashMap::new(),
-                        action: action.action.clone(),
+                        actions: vec![action.action.clone()],
                         id: "".to_owned(),
                     },
                 ),
@@ -289,8 +288,7 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        sub_entries: HashMap::new(),
-                        action: action.action.clone(),
+                        actions: vec![action.action.clone()],
                         id: "".to_owned(),
                     },
                 ),
@@ -308,8 +306,7 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        sub_entries: HashMap::new(),
-                        action: action.action.clone(),
+                        actions: vec![action.action.clone()],
                         id: "".to_owned(),
                     },
                 ),
@@ -361,9 +358,7 @@ impl From<&DesktopEntry> for Entry {
             description: value.description.clone(),
             icon: EntryIcon::from(value.icon.clone()),
             small_icon: EntryIcon::None,
-            // sub_entries: value.actions.clone(),
-            sub_entries: HashMap::new(),
-            action: EntryAction::Open(value.id.clone(), None),
+            actions: vec![EntryAction::Open(value.id.clone(), None)],
             id: "".to_owned(),
         }
     }
@@ -378,18 +373,14 @@ impl From<(&DesktopEntry, String)> for Entry {
             description: value.description.clone(),
             icon: EntryIcon::from(value.icon.clone()),
             small_icon: EntryIcon::None,
-            // sub_entries: value.actions.clone(),
-            sub_entries: HashMap::new(),
-            action: EntryAction::Open(value.id.clone(), None),
+            actions: vec![EntryAction::Open(value.id.clone(), None)],
             id: "".to_owned(),
         }
     }
 }
 
 #[derive(Debug)]
-pub struct Applications {
-    entries: Vec<DesktopEntry>,
-}
+pub struct Applications {}
 
 pub fn read_desktop_entries() -> Vec<DesktopEntry> {
     let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
@@ -436,9 +427,8 @@ pub fn read_desktop_entries() -> Vec<DesktopEntry> {
 }
 
 impl Applications {
-    pub async fn new() -> Self {
-        let entries = read_desktop_entries();
-        Self { entries }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -447,17 +437,18 @@ impl Plugin for Applications {
         "Applications"
     }
 
-    fn search(&self, query: &str) -> Box<dyn Iterator<Item = Entry> + '_> {
+    fn search(&self, query: &str, context: &mut Context) -> Vec<Entry> {
         if query.is_empty() {
-            Box::new(
-                self.entries
-                    .iter()
-                    .sorted_by(|a, b| match b.frequency.cmp(&a.frequency) {
-                        Ordering::Equal => a.name.cmp(&b.name),
-                        x => x,
-                    })
-                    .map(Into::into),
-            )
+            context
+                .apps
+                .app_map
+                .values()
+                .sorted_by(|a, b| match b.frequency.cmp(&a.frequency) {
+                    Ordering::Equal => a.name.cmp(&b.name),
+                    x => x,
+                })
+                .map(Into::into)
+                .collect()
         } else {
             let matcher = fuzzy_matcher::skim::SkimMatcherV2::default().ignore_case();
             // let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
@@ -467,21 +458,22 @@ impl Plugin for Applications {
             //     Normalization::Smart,
             //     AtomKind::Fuzzy,
             // );
-            Box::new(
-                self.entries
-                    .iter()
-                    .flat_map(|entry| {
-                        entry
-                            .actions
-                            .iter()
-                            .flat_map(|(_, action)| entry.get_action_score(action, query, &matcher))
-                            .chain(entry.get_score(query, &matcher))
-                    })
-                    .sorted_by_cached_key(|(a, b, _)| (*b, *a))
-                    .rev()
-                    .take(20)
-                    .map(|(_, _, x)| x),
-            )
+            context
+                .apps
+                .app_map
+                .values()
+                .flat_map(|entry| {
+                    entry
+                        .actions
+                        .iter()
+                        .flat_map(|(_, action)| entry.get_action_score(action, query, &matcher))
+                        .chain(entry.get_score(query, &matcher))
+                })
+                .sorted_by_cached_key(|(a, b, _)| (*b, *a))
+                .rev()
+                .take(20)
+                .map(|(_, _, x)| x)
+                .collect()
         }
     }
 }

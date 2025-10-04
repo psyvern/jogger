@@ -12,7 +12,7 @@ use crate::MoveDirection;
 pub enum SearchEntryMsg {
     Change(String),
     Move(MoveDirection),
-    Activate,
+    Activate(bool),
     UnselectPlugin,
     Close,
     Reload,
@@ -95,7 +95,7 @@ impl Component for SearchEntryModel {
                             }
                         }
                         Key::Return | Key::KP_Enter => {
-                            sender.output(SearchEntryMsg::Activate).unwrap();
+                            sender.output(SearchEntryMsg::Activate(modifier.contains(ModifierType::SHIFT_MASK))).unwrap();
                             return Propagation::Stop;
                         }
                         Key::Escape => {
