@@ -67,6 +67,15 @@ fn titlecase2(s: &str, color: Range<usize>) -> String {
     result
 }
 
+fn char_representation(c: char) -> char {
+    match c {
+        ' ' => '⎵',
+        '\0'..'\u{20}' => char::from_u32(c as u32 + 0x2400).unwrap_or(c),
+        c if c.is_whitespace() || c.is_control() => '�',
+        c => c,
+    }
+}
+
 impl Plugin for Unicode {
     fn name(&self) -> &str {
         "Characters"
@@ -77,96 +86,72 @@ impl Plugin for Unicode {
     }
 
     fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
-        if let Ok(query) = query.chars().exactly_one() {
-            DATA.binary_search_by(|x| x.scalar.cmp(&query))
-                .map(|x| &DATA[x])
-                .map(|x| Entry {
-                    name: titlecase(x.name),
-                    tag: None,
-                    description: Some(format!("{:04X}", x.codepoint)),
-                    icon: EntryIcon::Character(
-                        if x.scalar.is_whitespace() || x.scalar.is_control() {
-                            '�'
-                        } else {
-                            x.scalar
-                        },
-                    ),
-                    small_icon: EntryIcon::None,
-                    actions: vec![EntryAction::Copy(x.name.to_owned())],
-                    id: "".to_owned(),
-                })
-                .into_iter()
-                .collect()
+        if query.chars().exactly_one().is_ok() {
         } else if let Ok(codepoint) = u32::from_str_radix(query, 16) {
-            DATA.binary_search_by(|x| x.codepoint.cmp(&codepoint))
+            return DATA
+                .binary_search_by(|x| x.codepoint.cmp(&codepoint))
                 .map(|x| &DATA[x])
                 .map(|x| Entry {
                     name: titlecase(x.name),
-                    tag: None,
+                    tag: Some(x.category.to_string()),
                     description: Some(format!(
                         "<span color=\"#A2C9FE\">{:04X}</span>",
                         x.codepoint
                     )),
-                    icon: EntryIcon::Character(
-                        if x.scalar.is_whitespace() || x.scalar.is_control() {
-                            '�'
-                        } else {
-                            x.scalar
-                        },
-                    ),
+                    icon: EntryIcon::Character(char_representation(x.scalar)),
                     small_icon: EntryIcon::None,
                     actions: vec![EntryAction::Copy(x.name.to_owned())],
                     id: "".to_owned(),
                 })
                 .into_iter()
-                .collect()
+                .collect();
         } else if query.chars().all(|c| {
             matches!(c,
                 ' ' | '(' | ')' | ',' | '-' | '0'..='9' | '<' | '>' | 'A'..='Z' | 'a'..='z'
             )
         }) {
             let query = query.to_uppercase();
-            DATA.iter()
+            return DATA
+                .iter()
                 .flat_map(|x| x.name.find(&query).map(|i| (i, x)))
                 .take(64)
                 .map(|(i, x)| Entry {
                     name: titlecase2(x.name, i..(i + query.len())),
-                    tag: None,
+                    tag: Some(x.category.to_string()),
                     description: Some(format!("{:04X}", x.codepoint)),
-                    icon: EntryIcon::Character(
-                        if x.scalar.is_whitespace() || x.scalar.is_control() {
-                            '�'
-                        } else {
-                            x.scalar
-                        },
-                    ),
+                    icon: EntryIcon::Character(char_representation(x.scalar)),
                     small_icon: EntryIcon::None,
                     actions: vec![EntryAction::Copy(x.scalar.to_string())],
                     id: "".to_owned(),
                 })
-                .collect()
-        } else {
-            query
-                .chars()
-                .flat_map(|c| DATA.binary_search_by(|x| x.scalar.cmp(&c)))
-                .map(|x| &DATA[x])
-                .map(|x| Entry {
-                    name: titlecase(x.name),
-                    tag: None,
-                    description: Some(format!("{:04X}", x.codepoint)),
-                    icon: EntryIcon::Character(
-                        if x.scalar.is_whitespace() || x.scalar.is_control() {
-                            '�'
-                        } else {
-                            x.scalar
-                        },
-                    ),
-                    small_icon: EntryIcon::None,
-                    actions: vec![EntryAction::Copy(x.name.to_owned())],
-                    id: "".to_owned(),
-                })
-                .collect()
+                .collect();
         }
+
+        query
+            .chars()
+            .map(|c| {
+                DATA.binary_search_by(|x| x.scalar.cmp(&c))
+                    .map(|x| &DATA[x])
+                    .map(|x| Entry {
+                        name: titlecase(x.name),
+                        tag: Some(x.category.to_string()),
+                        description: Some(format!("{:04X}", x.codepoint)),
+                        icon: EntryIcon::Character(char_representation(x.scalar)),
+                        small_icon: EntryIcon::None,
+                        actions: vec![EntryAction::Copy(x.name.to_owned())],
+                        id: "".to_owned(),
+                    })
+                    .unwrap_or(Entry {
+                        name: "&lt;unknown&gt;".to_owned(),
+                        tag: Some("??".to_owned()),
+                        description: Some(format!("{:04X}", c as u32)),
+                        icon: EntryIcon::Character(c),
+                        small_icon: EntryIcon::None,
+                        actions: vec![],
+                        id: "".to_owned(),
+                    })
+            })
+            .collect()
     }
 
     fn has_entry(&self) -> bool {
