@@ -21,7 +21,7 @@ fn inner<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<SshConnection>> {
             continue;
         }
 
-        if let Some(line) = line.strip_prefix("Host").filter(|line| *line != "*") {
+        if let Some(line) = line.strip_prefix("Host ").filter(|line| *line != "*") {
             if let Some(current) = current {
                 connections.push(current);
             }
