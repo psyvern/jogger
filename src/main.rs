@@ -7,6 +7,7 @@ pub mod xdg_database;
 use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
 use dbus_crossroads::Crossroads;
+use gtk::{CenterBox, Separator};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -427,55 +428,95 @@ impl AsyncComponent for AppModel {
                     }
                 },
 
-                /*GBox {
+                CenterBox {
                     set_widget_name: "action_bar",
 
-                    Image {
-                        #[watch]
-                        set_icon_name: Some(model.selected_plugin
-                            .and_then(|index| {
-                                let plugin = model.plugins.read();
-                                Some(plugin.get(index)?.icon()?.to_owned())
-                            })
-                            // .and_then(|plugin| plugin.icon())
-                            .unwrap_or("edit-find".to_string()))
-                        .as_deref()
-                    },
-
-                    Label {
-                        #[watch]
-                        set_label: &model.selected_plugin
-                            .and_then(|index| {
-                                let plugin = model.plugins.read();
-                                Some(plugin.get(index)?.name().to_string())
-                            })
-                            .unwrap_or_default()
-                    },
-
-                    Label {
-                        #[watch]
-                        set_label: &model.list_entries.get(model.selected_entry)
-                            .and_then(|entry| {
-                                let entry = &entry.entry;
-                                let action = entry.actions.first()?;
-                                Some(match action {
-                                    EntryAction::Command(name, _, _) => {
-                                        name.to_owned()
-                                    },
-                                    EntryAction::Open(_, None) => {
-                                        "Launch".to_owned()
-                                    },
-                                    EntryAction::Open(_, Some(_)) => {
-                                        "Open".to_owned()
-                                    }
-                                    _ => "ciao".to_owned(),
+                    #[wrap(Some)]
+                    set_start_widget = &GBox {
+                        Image {
+                            #[watch]
+                            set_icon_name: Some(model.selected_plugin
+                                .and_then(|index| {
+                                    let plugin = model.plugins.read();
+                                    Some(plugin.get(index)?.icon()?.to_owned())
                                 })
-                            })
-                            .unwrap_or_default()
+                                // .and_then(|plugin| plugin.icon())
+                                .unwrap_or("edit-find".to_string()))
+                            .as_deref()
+                        },
+
+                        Label {
+                            #[watch]
+                            set_label: &model.selected_plugin
+                                .and_then(|index| {
+                                    let plugin = model.plugins.read();
+                                    Some(plugin.get(index)?.name().to_string())
+                                })
+                                .unwrap_or_default()
+                        },
                     },
 
-                    append = &Image::from_icon_name("keyboard-return"),
-                },*/
+                    #[wrap(Some)]
+                    set_end_widget = &GBox {
+                        Button {
+                            add_css_class: "keybind",
+
+                            GBox {
+                                Label {
+                                    #[watch]
+                                    set_label: &model.list_entries.get(model.selected_entry)
+                                        .and_then(|entry| {
+                                            let entry = &entry.entry;
+                                            let action = entry.actions.first()?;
+                                            Some(match action {
+                                                EntryAction::Command(name, _, _) => name.to_owned(),
+                                                EntryAction::Open(_, None) => "Run application".to_owned(),
+                                                EntryAction::Open(_, Some(_)) => "Open".to_owned(),
+                                                EntryAction::Copy(_) => "Copy".to_owned(),
+                                                _ => "Run".to_owned(),
+                                            })
+                                        })
+                                        .unwrap_or("Run".to_owned()),
+                                    add_css_class: "description",
+                                },
+
+                                Label {
+                                    set_label: "󰌑\u{2009}",
+                                    add_css_class: "key_symbol",
+                                },
+                            }
+                        },
+
+                        Separator {
+                            set_orientation: Vertical,
+                            add_css_class: "separator",
+                        },
+
+                        Button {
+                            add_css_class: "keybind",
+
+                            GBox {
+                                Label {
+                                    #[watch]
+                                    set_label: &model.list_entries.get(model.selected_entry)
+                                        .map(|_| "Actions".to_owned())
+                                        .unwrap_or(" ".to_owned()),
+                                    add_css_class: "description",
+                                },
+
+                                Label {
+                                    set_label: "󰘴",
+                                    add_css_class: "key_symbol",
+                                },
+
+                                Label {
+                                    set_label: "B",
+                                    add_css_class: "key",
+                                },
+                            }
+                        },
+                    },
+                },
             },
         }
     }

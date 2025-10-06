@@ -1,5 +1,6 @@
 * {
     color: unset;
+    border-color: unset;
 }
 
 placeholder {
@@ -142,6 +143,49 @@ row .small_icon {
 .tag {
     font-weight: 500;
     font-size: 15px;
+
+    padding: 0 4px;
+    background-color: #43474e;
+    border-radius: 4px;
+}
+
+.keybind {
+    padding: 6px;
+    border-radius: 6px;
+}
+
+.keybind:hover {
+    background-color: #272a2f;
+}
+
+.separator {
+    margin: 8px;
+}
+
+.keybind .description {
+    margin-right: 4px;
+    color: inherit;
+}
+
+.keybind .key {
+    font-family: monospace;
+    font-weight: 500;
+    font-size: 16px;
+    padding: 2px 6px 0px 6px;
+    background-color: #43474e;
+    border-radius: 4px;
+    margin-left: 4px;
+}
+
+.keybind .key_symbol {
+    font-family: monospace;
+    font-weight: 500;
+    font-size: 20px;
+    line-height: 0.8;
+    padding: 2px 4px 0px 4px;
+    background-color: #43474e;
+    border-radius: 4px;
+    margin-left: 4px;
 }
 
 .description {

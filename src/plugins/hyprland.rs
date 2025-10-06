@@ -46,7 +46,7 @@ impl From<&HyprlandClient> for Entry {
                 },
                 glib::markup_escape_text(&value.title)
             ),
-            tag: None,
+            tag: Some(format!("Workspace {}", value.workspace)),
             description: Some(
                 value
                     .app_name
