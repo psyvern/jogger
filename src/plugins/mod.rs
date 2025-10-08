@@ -1,4 +1,5 @@
 pub(crate) mod applications;
+pub(crate) mod clipboard;
 pub(crate) mod commands;
 pub(crate) mod files;
 pub(crate) mod hyprland;

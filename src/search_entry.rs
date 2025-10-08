@@ -12,7 +12,8 @@ use crate::MoveDirection;
 pub enum SearchEntryMsg {
     Change(String),
     Move(MoveDirection),
-    Activate(bool),
+    Activate,
+    Shortcut(Key, ModifierType),
     UnselectPlugin,
     Close,
     Reload,
@@ -94,8 +95,8 @@ impl Component for SearchEntryModel {
                                 return Propagation::Stop;
                             }
                         }
-                        Key::Return | Key::KP_Enter => {
-                            sender.output(SearchEntryMsg::Activate(modifier.contains(ModifierType::SHIFT_MASK))).unwrap();
+                        Key::Return | Key::KP_Enter if modifier == ModifierType::NO_MODIFIER_MASK  => {
+                            sender.output(SearchEntryMsg::Activate).unwrap();
                             return Propagation::Stop;
                         }
                         Key::Escape => {
@@ -112,7 +113,11 @@ impl Component for SearchEntryModel {
                             sender.output(SearchEntryMsg::Reload).unwrap();
                             return Propagation::Stop;
                         }
-                        _ => {}
+                        _ => {
+                            if modifier != ModifierType::NO_MODIFIER_MASK {
+                                sender.output(SearchEntryMsg::Shortcut(key, modifier)).unwrap();
+                            }
+                        }
                     };
 
                     Propagation::Proceed

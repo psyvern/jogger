@@ -1,5 +1,6 @@
 use std::{fmt::Debug, fs::DirEntry, path::Path};
 
+use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
 
 use crate::{
@@ -53,10 +54,14 @@ impl Files {
                                 icon: EntryIcon::Name("back".to_owned()),
                                 small_icon: EntryIcon::None,
                                 actions: vec![
-                                    EntryAction::Write(if x == "/" { x } else { x + "/" }),
-                                    EntryAction::Open(
-                                        app_database.file_browser.clone().unwrap(),
-                                        Some(parent.to_owned()),
+                                    EntryAction::Write(if x == "/" { x } else { x + "/" }).into(),
+                                    (
+                                        EntryAction::Open(
+                                            app_database.file_browser.clone().unwrap(),
+                                            Some(parent.to_owned()),
+                                        ),
+                                        Key::Return,
+                                        ModifierType::CONTROL_MASK,
                                     ),
                                 ],
                                 id: "".to_owned(),
@@ -125,13 +130,27 @@ impl Files {
             small_icon: EntryIcon::from(small_icon),
             actions: if metadata.is_dir() || mime.as_str() == "inode/directory" {
                 vec![
-                    EntryAction::Write(reduce_tilde(&entry.path(), &self.home_dir) + "/"),
-                    EntryAction::Open(database.file_browser.clone().unwrap(), Some(entry.path())),
+                    EntryAction::Write(reduce_tilde(&entry.path(), &self.home_dir) + "/").into(),
+                    (
+                        EntryAction::Open(
+                            database.file_browser.clone().unwrap(),
+                            Some(entry.path()),
+                        ),
+                        Key::Return,
+                        ModifierType::SHIFT_MASK,
+                    ),
                 ]
             } else if let Some(app) = app {
                 vec![
-                    EntryAction::Open(app.id.clone(), Some(entry.path())),
-                    EntryAction::Open(database.file_browser.clone().unwrap(), Some(entry.path())),
+                    EntryAction::Open(app.id.clone(), Some(entry.path())).into(),
+                    (
+                        EntryAction::Open(
+                            database.file_browser.clone().unwrap(),
+                            Some(entry.path()),
+                        ),
+                        Key::Return,
+                        ModifierType::SHIFT_MASK,
+                    ),
                 ]
             } else {
                 vec![]

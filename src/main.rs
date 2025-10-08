@@ -7,12 +7,13 @@ pub mod xdg_database;
 use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
 use dbus_crossroads::Crossroads;
+use gtk::gdk::{Key, ModifierType};
 use gtk::{CenterBox, Separator};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
-use relm4::AsyncComponentSender;
 use relm4::prelude::{AsyncComponent, AsyncComponentParts};
+use relm4::{AsyncComponentSender, view};
 use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -317,8 +318,9 @@ enum MoveDirection {
 #[derive(Debug)]
 enum AppMsg {
     Search(String),
-    Activate(usize, bool),
-    ActivateSelected(bool),
+    Activate(usize),
+    ActivateSelected,
+    Shortcut(Key, ModifierType),
     ClearPrefix,
     Move(MoveDirection),
     ScrollToSelected,
@@ -353,6 +355,178 @@ impl AppModel {
     fn use_grid(&self) -> bool {
         self.selected_plugin.is_none() && self.query.is_empty()
     }
+
+    fn current_entry(&self) -> Option<&Rc<Entry>> {
+        self.get_entry(self.selected_entry)
+    }
+
+    fn get_entry(&self, index: usize) -> Option<&Rc<Entry>> {
+        if self.use_grid() {
+            self.grid_entries.get(index).map(|x| &x.entry)
+        } else {
+            self.list_entries.get(index).map(|x| &x.entry)
+        }
+    }
+
+    fn execute_action(&mut self, action: &EntryAction, sender: AsyncComponentSender<Self>) {
+        match action {
+            EntryAction::Close => sender.input(AppMsg::Hide),
+            EntryAction::Write(query) => {
+                self.search_entry.emit(query.clone());
+            }
+            EntryAction::ChangePlugin(plugin) => {
+                self.selected_plugin = *plugin;
+                self.search_entry.emit(String::new());
+            }
+            EntryAction::Open(app, path) => {
+                let context = self.context.read();
+                if let Some(app) = context.apps.app_map.get(app) {
+                    context.apps.launch(
+                        app,
+                        &match path {
+                            Some(path) => vec![path.to_string_lossy().to_string()],
+                            None => vec![],
+                        },
+                    );
+                    sender.input(AppMsg::Hide);
+                }
+            }
+            EntryAction::LaunchTerminal(cmd, args) => {
+                if let Some(emulator) = self.context.read().apps.terminal_emulator() {
+                    let program = emulator.program();
+                    let mut command = Command::new(&program);
+
+                    command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
+
+                    command.arg(cmd);
+                    command.args(args);
+
+                    match command.spawn_detached() {
+                        Err(error) => println!(
+                            "Failed to start terminal {:?} {:?}",
+                            command.get_args(),
+                            error
+                        ),
+                        _ => sender.input(AppMsg::Hide),
+                    }
+                }
+            }
+            EntryAction::Copy(value) => {
+                let mut opts = wl_clipboard_rs::copy::Options::new();
+                opts.foreground(true);
+                opts.copy(
+                    wl_clipboard_rs::copy::Source::Bytes(value.bytes().collect()),
+                    wl_clipboard_rs::copy::MimeType::Autodetect,
+                )
+                .expect("Failed to serve copy bytes");
+
+                sender.input(AppMsg::Hide);
+            }
+            EntryAction::Shell(exec) => {
+                sender.input(AppMsg::Hide);
+
+                Dispatch::call(DispatchType::Exec(exec)).unwrap();
+
+                // Command::new(shell.as_deref().unwrap_or("sh"))
+                //     .arg("-c")
+                //     .arg(exec)
+                //     .current_dir(
+                //         path.as_ref()
+                //             .filter(|x| x.exists())
+                //             .unwrap_or(&std::env::current_dir().unwrap()),
+                //     )
+                //     .exec();
+            }
+            EntryAction::Command(_, command, path) => {
+                sender.input(AppMsg::Hide);
+
+                let mut iter = command.split_whitespace();
+                Command::new(iter.next().unwrap())
+                    .args(iter)
+                    .current_dir(
+                        path.as_ref()
+                            .filter(|x| x.exists())
+                            .unwrap_or(&std::env::current_dir().unwrap()),
+                    )
+                    .spawn()
+                    .unwrap()
+                    .wait()
+                    .unwrap();
+            }
+            EntryAction::HyprctlExec(value) => {
+                Dispatch::call(DispatchType::Exec(value)).unwrap();
+                sender.input(AppMsg::Hide);
+            }
+        }
+    }
+}
+
+fn widget_for_action(action: &EntryAction, key: Key, modifier: ModifierType) -> GBox {
+    widget_for_keybind(
+        match action {
+            EntryAction::Command(name, _, _) => name,
+            EntryAction::Open(_, None) => "Run application",
+            EntryAction::Open(_, Some(_)) => "Open",
+            EntryAction::Copy(_) => "Copy",
+            _ => "Run",
+        },
+        key,
+        modifier,
+    )
+}
+
+fn widget_for_keybind(description: &str, key: Key, modifier: ModifierType) -> GBox {
+    view! {
+        res = GBox {
+            Button {
+                add_css_class: "keybind",
+
+                GBox {
+                    Label {
+                        set_label: description,
+                        add_css_class: "description",
+                    },
+
+                    Label {
+                        set_label: "keyboard_command_key",
+                        add_css_class: "key_symbol",
+                        set_visible: modifier.contains(ModifierType::SUPER_MASK),
+                    },
+
+                    Label {
+                        set_label: "keyboard_control_key",
+                        add_css_class: "key_symbol",
+                        set_visible: modifier.contains(ModifierType::CONTROL_MASK),
+                    },
+
+                    Label {
+                        set_label: "keyboard_option_key",
+                        add_css_class: "key_symbol",
+                        set_visible: modifier.contains(ModifierType::ALT_MASK),
+                    },
+
+                    Label {
+                        set_label: "shift_lock",
+                        add_css_class: "key_symbol",
+                        set_visible: modifier.contains(ModifierType::SHIFT_MASK),
+                    },
+
+                    Label {
+                        set_label: &match key {
+                            Key::Return => "keyboard_return".to_owned(),
+                            _ => key
+                                .name()
+                                .map(|x| x.to_uppercase())
+                                .unwrap_or("<none>".to_owned()),
+                        },
+                        add_css_class: if key == Key::Return { "key_symbol" } else { "key" },
+                    }
+                }
+            },
+        }
+    }
+
+    res
 }
 
 #[relm4::component(async)]
@@ -422,7 +596,7 @@ impl AsyncComponent for AppModel {
                             set_can_focus: false,
 
                             connect_row_activated[sender] => move |_, row| {
-                                sender.input(AppMsg::Activate(row.index() as usize, false));
+                                sender.input(AppMsg::Activate(row.index() as usize));
                             },
                         },
                     }
@@ -458,33 +632,12 @@ impl AsyncComponent for AppModel {
 
                     #[wrap(Some)]
                     set_end_widget = &GBox {
-                        Button {
-                            add_css_class: "keybind",
-
-                            GBox {
-                                Label {
-                                    #[watch]
-                                    set_label: &model.list_entries.get(model.selected_entry)
-                                        .and_then(|entry| {
-                                            let entry = &entry.entry;
-                                            let action = entry.actions.first()?;
-                                            Some(match action {
-                                                EntryAction::Command(name, _, _) => name.to_owned(),
-                                                EntryAction::Open(_, None) => "Run application".to_owned(),
-                                                EntryAction::Open(_, Some(_)) => "Open".to_owned(),
-                                                EntryAction::Copy(_) => "Copy".to_owned(),
-                                                _ => "Run".to_owned(),
-                                            })
-                                        })
-                                        .unwrap_or("Run".to_owned()),
-                                    add_css_class: "description",
-                                },
-
-                                Label {
-                                    set_label: "󰌑\u{2009}",
-                                    add_css_class: "key_symbol",
-                                },
-                            }
+                        CenterBox {
+                            #[watch]
+                            set_end_widget: model.current_entry()
+                                .and_then(|x| x.actions.first())
+                                .map(|x| widget_for_action(&x.0, x.1, x.2))
+                                .as_ref(),
                         },
 
                         Separator {
@@ -492,29 +645,7 @@ impl AsyncComponent for AppModel {
                             add_css_class: "separator",
                         },
 
-                        Button {
-                            add_css_class: "keybind",
-
-                            GBox {
-                                Label {
-                                    #[watch]
-                                    set_label: &model.list_entries.get(model.selected_entry)
-                                        .map(|_| "Actions".to_owned())
-                                        .unwrap_or(" ".to_owned()),
-                                    add_css_class: "description",
-                                },
-
-                                Label {
-                                    set_label: "󰘴",
-                                    add_css_class: "key_symbol",
-                                },
-
-                                Label {
-                                    set_label: "B",
-                                    add_css_class: "key",
-                                },
-                            }
-                        },
+                        append: &widget_for_keybind("Actions", Key::b, ModifierType::CONTROL_MASK),
                     },
                 },
             },
@@ -529,13 +660,13 @@ impl AsyncComponent for AppModel {
         let list_entries = FactoryVecDeque::builder()
             .launch(gtk::ListBox::default())
             .forward(sender.input_sender(), |index: DynamicIndex| {
-                AppMsg::Activate(index.current_index(), false)
+                AppMsg::Activate(index.current_index())
             });
 
         let grid_entries = FactoryVecDeque::<GridEntryComponent>::builder()
             .launch(Grid::default())
             .forward(sender.input_sender(), |output| {
-                AppMsg::Activate(output.current_index(), false)
+                AppMsg::Activate(output.current_index())
             });
 
         let grid_size = 5;
@@ -546,7 +677,8 @@ impl AsyncComponent for AppModel {
                 .forward(sender.input_sender(), |output| match output {
                     SearchEntryMsg::Change(query) => AppMsg::Search(query),
                     SearchEntryMsg::Move(direction) => AppMsg::Move(direction),
-                    SearchEntryMsg::Activate(second) => AppMsg::ActivateSelected(second),
+                    SearchEntryMsg::Activate => AppMsg::ActivateSelected,
+                    SearchEntryMsg::Shortcut(key, modifier) => AppMsg::Shortcut(key, modifier),
                     SearchEntryMsg::UnselectPlugin => AppMsg::ClearPrefix,
                     SearchEntryMsg::Close => AppMsg::Hide,
                     SearchEntryMsg::Reload => AppMsg::Reload,
@@ -733,9 +865,10 @@ impl AsyncComponent for AppModel {
                                                             x.icon().map(str::to_owned),
                                                         ),
                                                         small_icon: EntryIcon::None,
-                                                        actions: vec![EntryAction::ChangePlugin(
-                                                            Some(i),
-                                                        )],
+                                                        actions: vec![
+                                                            EntryAction::ChangePlugin(Some(i))
+                                                                .into(),
+                                                        ],
                                                         id: String::new(),
                                                     },
                                                 )
@@ -771,111 +904,21 @@ impl AsyncComponent for AppModel {
                     sender.input(AppMsg::SearchResults(vec![]))
                 }
             }
-            AppMsg::Activate(index, second) => {
-                let entry = if self.use_grid() {
-                    self.grid_entries.get(index).map(|x| &x.entry)
-                } else {
-                    self.list_entries.get(index).map(|x| &x.entry)
-                };
+            AppMsg::Activate(index) => {
+                let entry = self.get_entry(index);
 
-                if let Some(action) = entry.and_then(|x| {
-                    if second {
-                        x.actions.get(1)
-                    } else {
-                        x.actions.first()
-                    }
-                }) {
-                    match action {
-                        EntryAction::Close => sender.input(AppMsg::Hide),
-                        EntryAction::Write(query) => {
-                            self.search_entry.emit(query.clone());
-                        }
-                        EntryAction::ChangePlugin(plugin) => {
-                            self.selected_plugin = *plugin;
-                            self.search_entry.emit(String::new());
-                        }
-                        EntryAction::Open(app, path) => {
-                            let context = self.context.read();
-                            if let Some(app) = context.apps.app_map.get(app) {
-                                context.apps.launch(
-                                    app,
-                                    &match path {
-                                        Some(path) => vec![path.to_string_lossy().to_string()],
-                                        None => vec![],
-                                    },
-                                );
-                                sender.input(AppMsg::Hide);
-                            }
-                        }
-                        EntryAction::LaunchTerminal(cmd, args) => {
-                            if let Some(emulator) = self.context.read().apps.terminal_emulator() {
-                                let program = emulator.program();
-                                let mut command = Command::new(&program);
+                if let Some((action, _, _)) = entry.and_then(|x| x.actions.first()) {
+                    self.execute_action(&action.clone(), sender);
+                }
+            }
+            AppMsg::Shortcut(key, modifier) => {
+                let entry = self.current_entry();
 
-                                command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
-
-                                command.arg(cmd);
-                                command.args(args);
-
-                                match command.spawn_detached() {
-                                    Err(error) => println!(
-                                        "Failed to start terminal {:?} {:?}",
-                                        command.get_args(),
-                                        error
-                                    ),
-                                    _ => sender.input(AppMsg::Hide),
-                                }
-                            }
-                        }
-                        EntryAction::Copy(value) => {
-                            let mut opts = wl_clipboard_rs::copy::Options::new();
-                            opts.foreground(true);
-                            opts.copy(
-                                wl_clipboard_rs::copy::Source::Bytes(value.bytes().collect()),
-                                wl_clipboard_rs::copy::MimeType::Autodetect,
-                            )
-                            .expect("Failed to serve copy bytes");
-
-                            sender.input(AppMsg::Hide);
-                        }
-                        EntryAction::Shell(exec, path) => {
-                            sender.input(AppMsg::Hide);
-
-                            Dispatch::call(DispatchType::Exec(&match path {
-                                Some(path) => format!("cd {}; {exec}", path.to_string_lossy()),
-                                None => exec.to_owned(),
-                            }))
-                            .unwrap();
-
-                            // Command::new(shell.as_deref().unwrap_or("sh"))
-                            //     .arg("-c")
-                            //     .arg(exec)
-                            //     .current_dir(
-                            //         path.as_ref()
-                            //             .filter(|x| x.exists())
-                            //             .unwrap_or(&std::env::current_dir().unwrap()),
-                            //     )
-                            //     .exec();
-                        }
-                        EntryAction::Command(_, command, path) => {
-                            sender.input(AppMsg::Hide);
-
-                            let mut iter = command.split_whitespace();
-                            Command::new(iter.next().unwrap())
-                                .args(iter)
-                                .current_dir(
-                                    path.as_ref()
-                                        .filter(|x| x.exists())
-                                        .unwrap_or(&std::env::current_dir().unwrap()),
-                                )
-                                .spawn()
-                                .unwrap()
-                                .wait()
-                                .unwrap();
-                        }
-                        EntryAction::HyprctlExec(value) => {
-                            Dispatch::call(DispatchType::Exec(value)).unwrap();
-                            sender.input(AppMsg::Hide);
+                if let Some(entry) = entry {
+                    for (action, a_key, a_modifier) in &entry.actions {
+                        if key == *a_key && modifier == *a_modifier {
+                            self.execute_action(&action.clone(), sender);
+                            break;
                         }
                     }
                 }
@@ -1027,8 +1070,8 @@ impl AsyncComponent for AppModel {
                     _ => self.selected_entry,
                 };
             }
-            AppMsg::ActivateSelected(second) => {
-                sender.input(AppMsg::Activate(self.selected_entry, second));
+            AppMsg::ActivateSelected => {
+                sender.input(AppMsg::Activate(self.selected_entry));
             }
             AppMsg::ClearPrefix => {
                 self.selected_plugin = None;
@@ -1116,6 +1159,7 @@ fn start() {
         plugins::applications::Applications,
         plugins::hyprland::Hyprland,
         plugins::math::Math,
+        plugins::clipboard::Clipboard,
         plugins::commands::Commands,
         plugins::ssh::Ssh,
         plugins::unicode::Unicode,

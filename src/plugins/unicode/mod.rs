@@ -100,7 +100,7 @@ impl Plugin for Unicode {
                     )),
                     icon: EntryIcon::Character(char_representation(x.scalar)),
                     small_icon: EntryIcon::None,
-                    actions: vec![EntryAction::Copy(x.name.to_owned())],
+                    actions: vec![EntryAction::Copy(x.name.to_owned()).into()],
                     id: "".to_owned(),
                 })
                 .into_iter()
@@ -121,7 +121,7 @@ impl Plugin for Unicode {
                     description: Some(format!("{:04X}", x.codepoint)),
                     icon: EntryIcon::Character(char_representation(x.scalar)),
                     small_icon: EntryIcon::None,
-                    actions: vec![EntryAction::Copy(x.scalar.to_string())],
+                    actions: vec![EntryAction::Copy(x.scalar.to_string()).into()],
                     id: "".to_owned(),
                 })
                 .collect();
@@ -138,7 +138,7 @@ impl Plugin for Unicode {
                         description: Some(format!("{:04X}", x.codepoint)),
                         icon: EntryIcon::Character(char_representation(x.scalar)),
                         small_icon: EntryIcon::None,
-                        actions: vec![EntryAction::Copy(x.name.to_owned())],
+                        actions: vec![EntryAction::Copy(x.name.to_owned()).into()],
                         id: "".to_owned(),
                     })
                     .unwrap_or(Entry {

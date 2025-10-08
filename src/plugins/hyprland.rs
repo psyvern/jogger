@@ -1,6 +1,9 @@
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
-use gtk::glib;
+use gtk::{
+    gdk::{Key, ModifierType},
+    glib,
+};
 use hyprland::{
     data::{Clients, Workspace},
     shared::{Address, HyprData, HyprDataActive, HyprDataActiveOptional},
@@ -54,17 +57,22 @@ impl From<&HyprlandClient> for Entry {
                     .unwrap_or_else(|| value.class.clone()),
             ),
             icon: EntryIcon::Name(value.path.clone().unwrap_or("image-missing".to_owned())),
-            small_icon: EntryIcon::Name("window".to_owned()),
+            small_icon: EntryIcon::None,
             actions: vec![
                 EntryAction::Command(
                     "Focus window".to_owned(),
                     format!("hyprctl dispatch focuswindow address:{}", value.address),
                     None,
-                ),
-                EntryAction::Command(
-                    "Close window".to_owned(),
-                    format!("hyprctl dispatch closewindow address:{}", value.address),
-                    None,
+                )
+                .into(),
+                (
+                    EntryAction::Command(
+                        "Close window".to_owned(),
+                        format!("hyprctl dispatch closewindow address:{}", value.address),
+                        None,
+                    ),
+                    Key::q,
+                    ModifierType::CONTROL_MASK,
                 ),
             ],
             id: value.address.to_string(),
@@ -161,7 +169,7 @@ impl Plugin for Hyprland {
     }
 
     fn icon(&self) -> Option<&str> {
-        Some("window")
+        Some("window_list")
     }
 
     fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {

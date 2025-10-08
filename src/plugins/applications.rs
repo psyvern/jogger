@@ -121,9 +121,9 @@ impl DesktopEntry {
                                                 exec = exec.replace(field_code, "");
                                             }
                                             // TODO: add other fields
-                                            EntryAction::Shell(exec, None)
+                                            EntryAction::Shell(exec)
                                         })
-                                        .unwrap_or(EntryAction::Shell(String::new(), None)),
+                                        .unwrap_or(EntryAction::Shell(String::new())),
                                 },
                             ))
                         })
@@ -258,7 +258,7 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        actions: vec![action.action.clone()],
+                        actions: vec![action.action.clone().into()],
                         id: "".to_owned(),
                     },
                 ),
@@ -273,7 +273,7 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        actions: vec![action.action.clone()],
+                        actions: vec![action.action.clone().into()],
                         id: "".to_owned(),
                     },
                 ),
@@ -288,7 +288,7 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        actions: vec![action.action.clone()],
+                        actions: vec![action.action.clone().into()],
                         id: "".to_owned(),
                     },
                 ),
@@ -306,7 +306,7 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        actions: vec![action.action.clone()],
+                        actions: vec![action.action.clone().into()],
                         id: "".to_owned(),
                     },
                 ),
@@ -358,7 +358,7 @@ impl From<&DesktopEntry> for Entry {
             description: value.description.clone(),
             icon: EntryIcon::from(value.icon.clone()),
             small_icon: EntryIcon::None,
-            actions: vec![EntryAction::Open(value.id.clone(), None)],
+            actions: vec![EntryAction::Open(value.id.clone(), None).into()],
             id: "".to_owned(),
         }
     }
@@ -373,7 +373,7 @@ impl From<(&DesktopEntry, String)> for Entry {
             description: value.description.clone(),
             icon: EntryIcon::from(value.icon.clone()),
             small_icon: EntryIcon::None,
-            actions: vec![EntryAction::Open(value.id.clone(), None)],
+            actions: vec![EntryAction::Open(value.id.clone(), None).into()],
             id: "".to_owned(),
         }
     }

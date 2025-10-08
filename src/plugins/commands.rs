@@ -37,10 +37,7 @@ impl Plugin for Commands {
             description: self.shell.as_ref().map(|x| format!("<tt>{x}</tt>")),
             icon: EntryIcon::Name("terminal".to_owned()),
             small_icon: EntryIcon::None,
-            actions: vec![EntryAction::Shell(
-                query.trim().into(),
-                /* self.shell.clone(), */ None,
-            )],
+            actions: vec![EntryAction::Shell(query.trim().into()).into()],
             id: "".to_owned(),
         }]
     }

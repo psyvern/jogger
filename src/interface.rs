@@ -37,12 +37,22 @@ pub enum EntryAction {
     Close,
     Copy(String),
     HyprctlExec(String),
-    Shell(String, Option<PathBuf>),
+    Shell(String),
     Command(String, String, Option<PathBuf>),
     LaunchTerminal(String, Vec<String>),
     Write(String),
     Open(String, Option<PathBuf>),
     ChangePlugin(Option<usize>),
+}
+
+impl From<EntryAction> for (EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType) {
+    fn from(value: EntryAction) -> Self {
+        (
+            value,
+            gtk::gdk::Key::Return,
+            gtk::gdk::ModifierType::NO_MODIFIER_MASK,
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -52,7 +62,7 @@ pub struct Entry {
     pub description: Option<String>,
     pub icon: EntryIcon,
     pub small_icon: EntryIcon,
-    pub actions: Vec<EntryAction>,
+    pub actions: Vec<(EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType)>,
     pub id: String,
 }
 

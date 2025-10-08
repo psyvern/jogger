@@ -88,11 +88,14 @@ impl Plugin for Math {
                 description: Some(units),
                 icon: EntryIcon::Name("accessories-calculator".to_string()),
                 small_icon: EntryIcon::None,
-                actions: vec![EntryAction::Copy(
-                    val.get_main_result()
-                        .trim_start_matches("approx. ")
-                        .to_owned(),
-                )],
+                actions: vec![
+                    EntryAction::Copy(
+                        val.get_main_result()
+                            .trim_start_matches("approx. ")
+                            .to_owned(),
+                    )
+                    .into(),
+                ],
                 id: "".to_owned(),
             };
 

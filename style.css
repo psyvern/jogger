@@ -171,18 +171,18 @@ row .small_icon {
     font-family: monospace;
     font-weight: 500;
     font-size: 16px;
-    padding: 2px 6px 0px 6px;
+    padding: 1px 7px 0px 7px;
     background-color: #43474e;
     border-radius: 4px;
     margin-left: 4px;
 }
 
 .keybind .key_symbol {
-    font-family: monospace;
+    font-family: "Material Symbols Outlined";
     font-weight: 500;
     font-size: 20px;
     line-height: 0.8;
-    padding: 2px 4px 0px 4px;
+    padding: 1px 2px 0px 2px;
     background-color: #43474e;
     border-radius: 4px;
     margin-left: 4px;
