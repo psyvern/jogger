@@ -38,10 +38,14 @@ pub enum EntryAction {
     Copy(String),
     HyprctlExec(String),
     Shell(String),
-    Command(String, String, Option<PathBuf>),
-    LaunchTerminal(String, Vec<String>),
+    Command(String, String, Vec<String>, Option<PathBuf>),
+    LaunchTerminal {
+        program: Option<String>,
+        arguments: Vec<String>,
+        working_directory: Option<PathBuf>,
+    },
     Write(String),
-    Open(String, Option<PathBuf>),
+    Open(String, Option<String>, Option<PathBuf>),
     ChangePlugin(Option<usize>),
 }
 

@@ -6,6 +6,7 @@ use std::{cmp::Ordering, collections::HashMap};
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
@@ -13,10 +14,6 @@ use crate::interface::Context;
 use crate::utils::IteratorExt;
 use crate::xdg_database::ExecParser;
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
-
-const FIELD_CODE_LIST: [&str; 13] = [
-    "%f", "%F", "%u", "%U", "%d", "%D", "%n", "%N", "%i", "%c", "%k", "%v", "%m",
-];
 
 #[derive(Clone, Debug)]
 pub struct DesktopEntry {
@@ -27,7 +24,7 @@ pub struct DesktopEntry {
     path: Option<PathBuf>,
     categories: Vec<String>,
     keywords: Vec<String>,
-    actions: HashMap<String, DesktopEntryAction>,
+    pub actions: HashMap<String, DesktopEntryAction>,
     pub working_directory: Option<PathBuf>,
     exec: Option<String>,
     pub terminal: bool,
@@ -46,10 +43,10 @@ pub struct TerminalArgs {
 }
 
 #[derive(Clone, Debug)]
-struct DesktopEntryAction {
+pub struct DesktopEntryAction {
     name: String,
-    icon: Option<String>,
-    action: EntryAction,
+    pub icon: Option<String>,
+    pub exec: Option<String>,
 }
 
 enum Kind {
@@ -112,18 +109,7 @@ impl DesktopEntry {
                                         .map(|x| x.to_string())
                                         .unwrap_or("<none>".into()),
                                     icon: value.action_entry(x, "Icon").map(str::to_string),
-                                    action: value
-                                        .action_exec(x)
-                                        .map(|exec| {
-                                            let mut exec = exec.to_string();
-
-                                            for field_code in FIELD_CODE_LIST {
-                                                exec = exec.replace(field_code, "");
-                                            }
-                                            // TODO: add other fields
-                                            EntryAction::Shell(exec)
-                                        })
-                                        .unwrap_or(EntryAction::Shell(String::new())),
+                                    exec: value.action_exec(x).map(str::to_owned),
                                 },
                             ))
                         })
@@ -207,7 +193,10 @@ impl DesktopEntry {
                     score,
                     Entry::from((
                         self,
-                        format!("#{}", color_fuzzy_match(&self.keywords[i], indices)),
+                        Some(format!(
+                            "#{}",
+                            color_fuzzy_match(&self.keywords[i], indices)
+                        )),
                     )),
                 ),
                 Kind::Category(i) => (
@@ -215,7 +204,10 @@ impl DesktopEntry {
                     score,
                     Entry::from((
                         self,
-                        format!("@{}", color_fuzzy_match(&self.categories[i], indices)),
+                        Some(format!(
+                            "@{}",
+                            color_fuzzy_match(&self.categories[i], indices)
+                        )),
                     )),
                 ),
             })
@@ -223,6 +215,7 @@ impl DesktopEntry {
 
     fn get_action_score(
         &self,
+        action_id: &str,
         action: &DesktopEntryAction,
         query: &str,
         matcher: &SkimMatcherV2,
@@ -258,7 +251,10 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        actions: vec![action.action.clone().into()],
+                        actions: vec![
+                            EntryAction::Open(self.id.clone(), Some(action_id.to_owned()), None)
+                                .into(),
+                        ],
                         id: "".to_owned(),
                     },
                 ),
@@ -273,7 +269,10 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        actions: vec![action.action.clone().into()],
+                        actions: vec![
+                            EntryAction::Open(self.id.clone(), Some(action_id.to_owned()), None)
+                                .into(),
+                        ],
                         id: "".to_owned(),
                     },
                 ),
@@ -288,7 +287,10 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        actions: vec![action.action.clone().into()],
+                        actions: vec![
+                            EntryAction::Open(self.id.clone(), Some(action_id.to_owned()), None)
+                                .into(),
+                        ],
                         id: "".to_owned(),
                     },
                 ),
@@ -306,7 +308,10 @@ impl DesktopEntry {
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
-                        actions: vec![action.action.clone().into()],
+                        actions: vec![
+                            EntryAction::Open(self.id.clone(), Some(action_id.to_owned()), None)
+                                .into(),
+                        ],
                         id: "".to_owned(),
                     },
                 ),
@@ -325,6 +330,16 @@ impl DesktopEntry {
         };
 
         parser.parse(exec, uris)
+    }
+
+    pub fn parse_str(&self, string: &str, uris: &[String], force_append: bool) -> Vec<String> {
+        let parser = ExecParser {
+            name: &self.name,
+            icon: self.icon.as_deref(),
+            force_append,
+        };
+
+        parser.parse(string, uris)
     }
 
     pub fn program(&self) -> String {
@@ -352,28 +367,43 @@ fn color_fuzzy_match(string: &str, indices: Vec<usize>) -> String {
 
 impl From<&DesktopEntry> for Entry {
     fn from(value: &DesktopEntry) -> Self {
-        Entry {
-            name: value.name.clone(),
-            tag: None,
-            description: value.description.clone(),
-            icon: EntryIcon::from(value.icon.clone()),
-            small_icon: EntryIcon::None,
-            actions: vec![EntryAction::Open(value.id.clone(), None).into()],
-            id: "".to_owned(),
-        }
+        Self::from((value, None))
     }
 }
 
-impl From<(&DesktopEntry, String)> for Entry {
-    fn from(value: (&DesktopEntry, String)) -> Self {
+impl From<(&DesktopEntry, Option<String>)> for Entry {
+    fn from(value: (&DesktopEntry, Option<String>)) -> Self {
         let (value, tag) = value;
         Entry {
             name: value.name.clone(),
-            tag: Some(tag),
+            tag,
             description: value.description.clone(),
             icon: EntryIcon::from(value.icon.clone()),
             small_icon: EntryIcon::None,
-            actions: vec![EntryAction::Open(value.id.clone(), None).into()],
+            actions: {
+                let mut vec = vec![EntryAction::Open(value.id.clone(), None, None).into()];
+                vec.extend(value.actions.keys().enumerate().flat_map(|(i, x)| {
+                    let key = match i {
+                        0 => Key::_1,
+                        1 => Key::_2,
+                        2 => Key::_3,
+                        3 => Key::_4,
+                        4 => Key::_5,
+                        5 => Key::_6,
+                        6 => Key::_7,
+                        7 => Key::_8,
+                        8 => Key::_9,
+                        9 => Key::_0,
+                        _ => return None,
+                    };
+                    Some((
+                        EntryAction::Open(value.id.clone(), Some(x.to_owned()), None),
+                        key,
+                        ModifierType::CONTROL_MASK,
+                    ))
+                }));
+                vec
+            },
             id: "".to_owned(),
         }
     }
@@ -466,7 +496,9 @@ impl Plugin for Applications {
                     entry
                         .actions
                         .iter()
-                        .flat_map(|(_, action)| entry.get_action_score(action, query, &matcher))
+                        .flat_map(|(id, action)| {
+                            entry.get_action_score(id, action, query, &matcher)
+                        })
                         .chain(entry.get_score(query, &matcher))
                 })
                 .sorted_by_cached_key(|(a, b, _)| (*b, *a))

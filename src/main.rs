@@ -378,28 +378,47 @@ impl AppModel {
                 self.selected_plugin = *plugin;
                 self.search_entry.emit(String::new());
             }
-            EntryAction::Open(app, path) => {
+            EntryAction::Open(app, action, path) => {
                 let context = self.context.read();
                 if let Some(app) = context.apps.app_map.get(app) {
-                    context.apps.launch(
-                        app,
-                        &match path {
-                            Some(path) => vec![path.to_string_lossy().to_string()],
-                            None => vec![],
-                        },
-                    );
-                    sender.input(AppMsg::Hide);
+                    let args = match path {
+                        Some(path) => vec![path.to_string_lossy().to_string()],
+                        None => vec![],
+                    };
+                    if match action {
+                        Some(action) => context.apps.launch_action(app, action, &args),
+                        None => context.apps.launch(app, &args),
+                    } {
+                        sender.input(AppMsg::Hide);
+                    }
                 }
             }
-            EntryAction::LaunchTerminal(cmd, args) => {
+            EntryAction::LaunchTerminal {
+                program,
+                arguments,
+                working_directory,
+            } => {
                 if let Some(emulator) = self.context.read().apps.terminal_emulator() {
-                    let program = emulator.program();
-                    let mut command = Command::new(&program);
+                    let mut command = Command::new(emulator.program());
 
-                    command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
+                    if let Some(working_directory) = working_directory {
+                        if let Some(arg) = &emulator.terminal_args.dir {
+                            if arg.ends_with('=') {
+                                command
+                                    .arg(format!("{arg}{}", working_directory.to_string_lossy()));
+                            } else {
+                                command.arg(arg);
+                                command.arg(working_directory);
+                            }
+                        }
+                    }
 
-                    command.arg(cmd);
-                    command.args(args);
+                    if let Some(program) = program {
+                        command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
+
+                        command.arg(program);
+                        command.args(arguments);
+                    }
 
                     match command.spawn_detached() {
                         Err(error) => println!(
@@ -437,12 +456,11 @@ impl AppModel {
                 //     )
                 //     .exec();
             }
-            EntryAction::Command(_, command, path) => {
+            EntryAction::Command(_, command, args, path) => {
                 sender.input(AppMsg::Hide);
 
-                let mut iter = command.split_whitespace();
-                Command::new(iter.next().unwrap())
-                    .args(iter)
+                Command::new(command)
+                    .args(args)
                     .current_dir(
                         path.as_ref()
                             .filter(|x| x.exists())
@@ -464,9 +482,10 @@ impl AppModel {
 fn widget_for_action(action: &EntryAction, key: Key, modifier: ModifierType) -> GBox {
     widget_for_keybind(
         match action {
-            EntryAction::Command(name, _, _) => name,
-            EntryAction::Open(_, None) => "Run application",
-            EntryAction::Open(_, Some(_)) => "Open",
+            EntryAction::Command(name, _, _, _) => name,
+            EntryAction::Open(_, None, None) => "Run application",
+            EntryAction::Open(_, Some(_), None) => "Run action",
+            EntryAction::Open(_, _, Some(_)) => "Open",
             EntryAction::Copy(_) => "Copy",
             _ => "Run",
         },

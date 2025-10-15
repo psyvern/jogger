@@ -61,14 +61,54 @@ impl From<&HyprlandClient> for Entry {
             actions: vec![
                 EntryAction::Command(
                     "Focus window".to_owned(),
-                    format!("hyprctl dispatch focuswindow address:{}", value.address),
+                    "hyprctl".to_owned(),
+                    vec![
+                        "dispatch".to_owned(),
+                        "focuswindow".to_owned(),
+                        format!("address:{}", value.address),
+                    ],
                     None,
                 )
                 .into(),
                 (
                     EntryAction::Command(
+                        "Move to current workspace".to_owned(),
+                        "hyprctl".to_owned(),
+                        vec![
+                            "dispatch".to_owned(),
+                            "movetoworkspace".to_owned(),
+                            format!("+0,address:{}", value.address),
+                        ],
+                        None,
+                    ),
+                    Key::Return,
+                    ModifierType::SHIFT_MASK,
+                ),
+                (
+                    EntryAction::Command(
+                        "Toggle fullscreen".to_owned(),
+                        "hyprctl".to_owned(),
+                        vec![
+                            "--batch".to_owned(),
+                            format!(
+                                "dispatch focuswindow address:{} ; dispatch fullscreen 0",
+                                value.address
+                            ),
+                        ],
+                        None,
+                    ),
+                    Key::f,
+                    ModifierType::CONTROL_MASK,
+                ),
+                (
+                    EntryAction::Command(
                         "Close window".to_owned(),
-                        format!("hyprctl dispatch closewindow address:{}", value.address),
+                        "hyprctl".to_owned(),
+                        vec![
+                            "dispatch".to_owned(),
+                            "closewindow".to_owned(),
+                            format!("address:{}", value.address),
+                        ],
                         None,
                     ),
                     Key::q,

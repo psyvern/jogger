@@ -110,7 +110,12 @@ impl Plugin for Ssh {
                 icon: EntryIcon::Name("network-wired".to_owned()),
                 small_icon: EntryIcon::None,
                 actions: vec![
-                    EntryAction::LaunchTerminal("ssh".to_owned(), vec![x.name.clone()]).into(),
+                    EntryAction::LaunchTerminal {
+                        program: Some("ssh".to_owned()),
+                        arguments: vec![x.name.clone()],
+                        working_directory: None,
+                    }
+                    .into(),
                 ],
                 id: "".to_owned(),
             })

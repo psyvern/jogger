@@ -58,9 +58,19 @@ impl Files {
                                     (
                                         EntryAction::Open(
                                             app_database.file_browser.clone().unwrap(),
+                                            None,
                                             Some(parent.to_owned()),
                                         ),
                                         Key::Return,
+                                        ModifierType::CONTROL_MASK,
+                                    ),
+                                    (
+                                        EntryAction::LaunchTerminal {
+                                            program: None,
+                                            arguments: vec![],
+                                            working_directory: Some(path.clone()),
+                                        },
+                                        Key::t,
                                         ModifierType::CONTROL_MASK,
                                     ),
                                 ],
@@ -134,22 +144,42 @@ impl Files {
                     (
                         EntryAction::Open(
                             database.file_browser.clone().unwrap(),
+                            None,
                             Some(entry.path()),
                         ),
                         Key::Return,
                         ModifierType::SHIFT_MASK,
                     ),
+                    (
+                        EntryAction::LaunchTerminal {
+                            program: None,
+                            arguments: vec![],
+                            working_directory: Some(entry.path()),
+                        },
+                        Key::t,
+                        ModifierType::CONTROL_MASK,
+                    ),
                 ]
             } else if let Some(app) = app {
                 vec![
-                    EntryAction::Open(app.id.clone(), Some(entry.path())).into(),
+                    EntryAction::Open(app.id.clone(), None, Some(entry.path())).into(),
                     (
                         EntryAction::Open(
                             database.file_browser.clone().unwrap(),
+                            None,
                             Some(entry.path()),
                         ),
                         Key::Return,
                         ModifierType::SHIFT_MASK,
+                    ),
+                    (
+                        EntryAction::LaunchTerminal {
+                            program: None,
+                            arguments: vec![],
+                            working_directory: entry.path().parent().map(|x| x.to_owned()),
+                        },
+                        Key::t,
+                        ModifierType::CONTROL_MASK,
                     ),
                 ]
             } else {

@@ -552,6 +552,55 @@ impl XdgAppDatabase {
 
         true
     }
+
+    pub fn launch_action(&self, app: &DesktopEntry, action: &str, args: &[String]) -> bool {
+        let Some(exec) = app.actions.get(action).and_then(|x| x.exec.as_ref()) else {
+            println!("No action called {action}");
+            return false;
+        };
+
+        let exec = app.parse_str(exec, args, false);
+
+        if exec.is_empty() {
+            println!("No program to start the app");
+            return false;
+        }
+
+        let mut command = if app.terminal {
+            if let Some(emulator) = self.terminal_emulator() {
+                let program = emulator.program();
+                let mut command = Command::new(&program);
+
+                command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
+
+                for part in exec {
+                    command.arg(part);
+                }
+
+                command
+            } else {
+                return false;
+            }
+        } else {
+            let mut command = Command::new(&exec[0]);
+            for arg in &exec[1..] {
+                command.arg(arg);
+            }
+
+            command
+        };
+
+        if let Some(working_directory) = &app.working_directory {
+            command.current_dir(working_directory);
+        }
+
+        if let Err(error) = command.spawn_detached() {
+            println!("Failed to start app {:?} {:?}", command.get_args(), error);
+            return false;
+        }
+
+        true
+    }
 }
 
 pub struct ExecParser<'a> {
