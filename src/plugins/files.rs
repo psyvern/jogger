@@ -4,7 +4,7 @@ use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
 
 use crate::{
-    interface::{Context, Entry, EntryAction, EntryIcon},
+    interface::{Context, Entry, EntryAction, EntryIcon, FormattedString},
     xdg_database::XdgAppDatabase,
 };
 
@@ -22,7 +22,7 @@ fn reduce_tilde(path: &Path, home_dir: &str) -> String {
 }
 
 impl Files {
-    pub fn new() -> Self {
+    pub fn new(_: &mut Context) -> Self {
         Self {
             home_dir: std::env::var("HOME").unwrap(),
         }
@@ -48,7 +48,7 @@ impl Files {
                         .map(|parent| {
                             let x = reduce_tilde(parent, &self.home_dir);
                             Entry {
-                                name: "..".to_string(),
+                                name: FormattedString::plain(".."),
                                 tag: None,
                                 description: Some("Go back".to_owned()),
                                 icon: EntryIcon::Name("back".to_owned()),
@@ -133,7 +133,7 @@ impl Files {
         };
 
         Some(Entry {
-            name: name.to_string(),
+            name: FormattedString::plain(name),
             tag: None,
             description: Some(desc),
             icon: EntryIcon::Name(icon),

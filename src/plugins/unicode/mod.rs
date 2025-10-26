@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::plugins::unicode::char::Char;
 
-use crate::interface::{Context, Entry, EntryAction, EntryIcon, Plugin};
+use crate::interface::{Context, Entry, EntryAction, EntryIcon, FormattedString, Plugin};
 
 include!(concat!(env!("OUT_DIR"), "/data.rs"));
 
@@ -14,7 +14,7 @@ include!(concat!(env!("OUT_DIR"), "/data.rs"));
 pub struct Unicode {}
 
 impl Unicode {
-    pub fn new() -> Self {
+    pub fn new(_: &mut Context) -> Self {
         Self {}
     }
 }
@@ -92,7 +92,7 @@ impl Plugin for Unicode {
                 .binary_search_by(|x| x.codepoint.cmp(&codepoint))
                 .map(|x| &DATA[x])
                 .map(|x| Entry {
-                    name: titlecase(x.name),
+                    name: FormattedString::plain(titlecase(x.name)),
                     tag: Some(x.category.to_string()),
                     description: Some(format!(
                         "<span color=\"#A2C9FE\">{:04X}</span>",
@@ -116,7 +116,7 @@ impl Plugin for Unicode {
                 .flat_map(|x| x.name.find(&query).map(|i| (i, x)))
                 .take(64)
                 .map(|(i, x)| Entry {
-                    name: titlecase2(x.name, i..(i + query.len())),
+                    name: FormattedString::plain(titlecase2(x.name, i..(i + query.len()))),
                     tag: Some(x.category.to_string()),
                     description: Some(format!("{:04X}", x.codepoint)),
                     icon: EntryIcon::Character(char_representation(x.scalar)),
@@ -133,7 +133,7 @@ impl Plugin for Unicode {
                 DATA.binary_search_by(|x| x.scalar.cmp(&c))
                     .map(|x| &DATA[x])
                     .map(|x| Entry {
-                        name: titlecase(x.name),
+                        name: FormattedString::plain(titlecase(x.name)),
                         tag: Some(x.category.to_string()),
                         description: Some(format!("{:04X}", x.codepoint)),
                         icon: EntryIcon::Character(char_representation(x.scalar)),
@@ -142,7 +142,7 @@ impl Plugin for Unicode {
                         id: "".to_owned(),
                     })
                     .unwrap_or(Entry {
-                        name: "&lt;unknown&gt;".to_owned(),
+                        name: FormattedString::plain("<unknown>"),
                         tag: Some("??".to_owned()),
                         description: Some(format!("{:04X}", c as u32)),
                         icon: EntryIcon::Character(c),

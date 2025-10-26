@@ -4,7 +4,7 @@ use std::time::Instant;
 use fend_core::SpanKind;
 use itertools::Itertools;
 
-use crate::interface::Context;
+use crate::interface::{Context, FormattedString};
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
 #[derive(Debug)]
@@ -13,7 +13,7 @@ pub struct Math {
 }
 
 impl Math {
-    pub fn new() -> Self {
+    pub fn new(_: &mut Context) -> Self {
         let context = fend_core::Context::new();
         Self { context }
     }
@@ -58,7 +58,7 @@ impl Plugin for Math {
                         } else {
                             0xFFFFFF
                         },
-                        gtk::glib::markup_escape_text(x.string())
+                        x.string()
                     );
                     output
                 },
@@ -83,7 +83,7 @@ impl Plugin for Math {
                 .collect();
 
             let val = Entry {
-                name: format!("{first}{string}"),
+                name: FormattedString::plain(format!("{first}{string}")),
                 tag: None,
                 description: Some(units),
                 icon: EntryIcon::Name("accessories-calculator".to_string()),

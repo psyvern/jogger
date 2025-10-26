@@ -1,9 +1,6 @@
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
-use gtk::{
-    gdk::{Key, ModifierType},
-    glib,
-};
+use gtk::gdk::{Key, ModifierType};
 use hyprland::{
     data::{Clients, Workspace},
     shared::{Address, HyprData, HyprDataActive, HyprDataActiveOptional},
@@ -11,7 +8,9 @@ use hyprland::{
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use crate::interface::{Context, Entry, EntryAction, EntryIcon, Plugin};
+use crate::interface::{
+    Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString, Plugin,
+};
 
 #[derive(Debug)]
 pub struct Hyprland {
@@ -41,14 +40,10 @@ struct HyprlandClient {
 impl From<&HyprlandClient> for Entry {
     fn from(value: &HyprlandClient) -> Self {
         Entry {
-            name: format!(
-                "{}{}",
-                match value.selection_status {
-                    SelectionStatus::None => "",
-                    _ => "<span color=\"#FFAF00\">🞱 </span>",
-                },
-                glib::markup_escape_text(&value.title)
-            ),
+            name: FormattedString::from_styles(match value.selection_status {
+                SelectionStatus::None => vec![(&value.title, None)],
+                _ => vec![("🞱 ", Some(FormatStyle::Special)), (&value.title, None)],
+            }),
             tag: Some(format!("Workspace {}", value.workspace)),
             description: Some(
                 value
@@ -121,7 +116,7 @@ impl From<&HyprlandClient> for Entry {
 }
 
 impl Hyprland {
-    pub fn new() -> Self {
+    pub fn new(_: &mut Context) -> Self {
         let locales = get_languages_from_env();
         let entries: HashMap<_, _> = freedesktop_desktop_entry::Iter::new(default_paths())
             .entries(Some(&locales))

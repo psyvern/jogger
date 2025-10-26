@@ -10,7 +10,7 @@ use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
-use crate::interface::Context;
+use crate::interface::{Context, FormatStyle, FormattedString};
 use crate::utils::IteratorExt;
 use crate::xdg_database::ExecParser;
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
@@ -246,7 +246,7 @@ impl DesktopEntry {
                     3,
                     score,
                     Entry {
-                        name: color_fuzzy_match(&action.name, indices),
+                        name: color_fuzzy_match2(&action.name, indices),
                         tag: None,
                         description: Some(self.name.clone()),
                         icon: EntryIcon::from(self.icon.clone()),
@@ -264,7 +264,7 @@ impl DesktopEntry {
                     2,
                     score,
                     Entry {
-                        name: action.name.clone(),
+                        name: FormattedString::plain(&action.name),
                         tag: None,
                         description: Some(color_fuzzy_match(&self.name, indices)),
                         icon: EntryIcon::from(self.icon.clone()),
@@ -282,7 +282,7 @@ impl DesktopEntry {
                     1,
                     score,
                     Entry {
-                        name: action.name.clone(),
+                        name: FormattedString::plain(&action.name),
                         tag: Some(color_fuzzy_match(&self.keywords[i], indices)),
                         description: Some(self.name.clone()),
                         icon: EntryIcon::from(self.icon.clone()),
@@ -300,7 +300,7 @@ impl DesktopEntry {
                     0,
                     score,
                     Entry {
-                        name: action.name.clone(),
+                        name: FormattedString::plain(&action.name),
                         tag: Some(format!(
                             "@{}",
                             color_fuzzy_match(&self.categories[i], indices)
@@ -371,6 +371,17 @@ fn color_fuzzy_match(string: &str, indices: Vec<usize>) -> String {
     buffer
 }
 
+fn color_fuzzy_match2(string: &str, indices: Vec<usize>) -> FormattedString {
+    FormattedString {
+        text: string.to_owned(),
+        ranges: indices
+            .into_iter()
+            .ranges()
+            .map(|x| (FormatStyle::Highlight, x))
+            .collect(),
+    }
+}
+
 impl From<&DesktopEntry> for Entry {
     fn from(value: &DesktopEntry) -> Self {
         Self::from((value, None))
@@ -381,7 +392,7 @@ impl From<(&DesktopEntry, Option<String>)> for Entry {
     fn from(value: (&DesktopEntry, Option<String>)) -> Self {
         let (value, tag) = value;
         Entry {
-            name: value.name.clone(),
+            name: FormattedString::plain(&value.name),
             tag,
             description: value.description.clone(),
             icon: EntryIcon::from(value.icon.clone()),
@@ -424,7 +435,7 @@ impl From<(&DesktopEntry, Option<String>)> for Entry {
 
 #[derive(Debug)]
 pub struct Applications {
-    desktop_opener: String,
+    desktop_file_opener: String,
 }
 
 pub fn read_desktop_entries() -> Vec<DesktopEntry> {
@@ -472,9 +483,19 @@ pub fn read_desktop_entries() -> Vec<DesktopEntry> {
 }
 
 impl Applications {
-    pub fn new() -> Self {
+    pub fn new(context: &mut Context) -> Self {
+        let opener = context
+            .apps
+            .default_for_mime(&"application/x-desktop".parse().unwrap())
+            .or_else(|| {
+                context
+                    .apps
+                    .default_for_mime(&"text/plain".parse().unwrap())
+            })
+            .expect("Couldn't find app to open .desktop files");
+
         Self {
-            desktop_opener: "Helix".to_owned(),
+            desktop_file_opener: opener.id.clone(),
         }
     }
 }

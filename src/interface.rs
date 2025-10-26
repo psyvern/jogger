@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt::Debug;
+use std::ops::Range;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -59,9 +60,101 @@ impl From<EntryAction> for (EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType) 
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FormatStyle {
+    Highlight,
+    Special,
+    Monospace,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FormattedString {
+    pub text: String,
+    pub ranges: Vec<(FormatStyle, Range<usize>)>,
+}
+
+impl FormattedString {
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            ranges: vec![],
+        }
+    }
+
+    pub fn from_styles(ranges: Vec<(&str, Option<FormatStyle>)>) -> Self {
+        let mut result = String::new();
+        let mut res_ranges = Vec::new();
+
+        let mut tot_size = 0;
+        for (text, style) in ranges {
+            let size = text.len();
+
+            if let Some(style) = style {
+                res_ranges.push((style, tot_size..size));
+            }
+
+            result.push_str(text);
+            tot_size += size;
+        }
+
+        Self {
+            text: result,
+            ranges: res_ranges,
+        }
+    }
+
+    pub fn to_pango_escaped(&self) -> String {
+        fn escape(text: &str) -> String {
+            let mut result = String::new();
+            for c in text.chars() {
+                match c {
+                    '&' => result.push_str("&amp;"),
+                    '<' => result.push_str("&lt;"),
+                    '>' => result.push_str("&gt;"),
+                    '\'' => result.push_str("&apos;"),
+                    '"' => result.push_str("&quot;"),
+                    _ => result.push(c),
+                }
+            }
+
+            result
+        }
+
+        let mut buffer = String::new();
+
+        let mut last = 0;
+        for (style, range) in &self.ranges {
+            buffer.push_str(&escape(&self.text[last..range.start]));
+            last = range.end;
+
+            let text = escape(&self.text[range.clone()]);
+            buffer.push_str(&match style {
+                FormatStyle::Highlight => format!("<span color=\"#A2C9FE\">{text}</span>"),
+                FormatStyle::Special => format!("<span color=\"#FFAF00\">{text}</span>"),
+                FormatStyle::Monospace => format!("<tt>{text}</tt>"),
+            });
+        }
+        buffer.push_str(&escape(&self.text[last..]));
+
+        buffer
+    }
+}
+
+impl PartialOrd for FormattedString {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FormattedString {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.text.cmp(&other.text)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Entry {
-    pub name: String,
+    pub name: FormattedString,
     pub tag: Option<String>,
     pub description: Option<String>,
     pub icon: EntryIcon,

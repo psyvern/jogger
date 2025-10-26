@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::interface::{Context, Entry, EntryAction, EntryIcon, Plugin};
+use crate::interface::{Context, Entry, EntryAction, EntryIcon, FormattedString, Plugin};
 
 #[derive(Debug)]
 struct SshConnection {
@@ -75,7 +75,7 @@ pub struct Ssh {
 }
 
 impl Ssh {
-    pub fn new() -> Self {
+    pub fn new(_: &mut Context) -> Self {
         #[allow(deprecated)]
         let home = std::env::home_dir().unwrap();
         let connections = inner(home.join(".ssh").join("config")).unwrap_or_default();
@@ -99,7 +99,7 @@ impl Plugin for Ssh {
             .iter()
             .filter(move |x| x.name.contains(&query) || x.address.contains(&query))
             .map(|x| Entry {
-                name: x.name.clone(),
+                name: FormattedString::plain(&x.name),
                 tag: None,
                 description: Some(format!(
                     "{}{}{}",

@@ -1,5 +1,5 @@
 use crate::Plugin;
-use crate::interface::{Context, EntryIcon};
+use crate::interface::{Context, EntryIcon, FormatStyle, FormattedString};
 
 use crate::{Entry, EntryAction};
 use std::env;
@@ -10,7 +10,7 @@ pub struct Commands {
 }
 
 impl Commands {
-    pub fn new() -> Self {
+    pub fn new(_: &mut Context) -> Self {
         Self {
             shell: env::var("SHELL").ok(),
         }
@@ -32,7 +32,7 @@ impl Plugin for Commands {
 
     fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
         vec![Entry {
-            name: format!("<tt>{}</tt>", gtk::glib::markup_escape_text(query.trim())),
+            name: FormattedString::from_styles(vec![(query.trim(), Some(FormatStyle::Monospace))]),
             tag: None,
             description: self.shell.as_ref().map(|x| format!("<tt>{x}</tt>")),
             icon: EntryIcon::Name("terminal".to_owned()),

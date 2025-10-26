@@ -39,7 +39,7 @@ use relm4::{
 };
 use search_entry::{SearchEntryModel, SearchEntryMsg};
 
-use crate::interface::{Context, EntryIcon};
+use crate::interface::{Context, EntryIcon, FormattedString};
 use crate::plugins::files::Files;
 use crate::utils::CommandExt;
 
@@ -126,7 +126,7 @@ impl FactoryComponent for GridEntryComponent {
                 },
 
                 Label {
-                    set_label: &self.entry.name,
+                    set_label: &self.entry.name.to_pango_escaped(),
                     set_ellipsize: EllipsizeMode::End,
                     set_lines: 2,
                     set_vexpand: true,
@@ -237,7 +237,7 @@ impl FactoryComponent for ListEntryComponent {
 
                         GBox {
                             Label {
-                                set_label: &self.entry.name,
+                                set_label: &self.entry.name.to_pango_escaped(),
                                 set_use_markup: true,
                                 set_ellipsize: EllipsizeMode::End,
                                 set_halign: Align::Start,
@@ -340,7 +340,7 @@ struct AppModel {
     query: String,
     thread_handle: Option<stoppable_thread::StoppableHandle<()>>,
     plugins: Arc<RwLock<Vec<Box<dyn Plugin>>>>,
-    plugins_fn: Vec<fn() -> Box<dyn Plugin>>,
+    plugins_fn: Vec<fn(&mut Context) -> Box<dyn Plugin>>,
     selected_plugin: Option<usize>,
     selected_entry: usize,
     list_entries: FactoryVecDeque<ListEntryComponent>,
@@ -554,7 +554,7 @@ impl AsyncComponent for AppModel {
     type Output = ();
     type CommandOutput = CommandMsg;
 
-    type Init = Vec<fn() -> Box<dyn Plugin>>;
+    type Init = Vec<fn(&mut Context) -> Box<dyn Plugin>>;
 
     view! {
         Window {
@@ -759,9 +759,12 @@ impl AsyncComponent for AppModel {
 
             std::future::pending::<()>().await;
         });
+
+        let context = model.context.clone();
         tokio::spawn(async move {
+            let mut context = context.write();
             for plugin in plugins {
-                sender.input(AppMsg::PluginLoaded(plugin()));
+                sender.input(AppMsg::PluginLoaded(plugin(&mut context)));
             }
         });
 
@@ -859,7 +862,7 @@ impl AsyncComponent for AppModel {
                             match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
                                 None => {
                                     if query.starts_with(['~', '/']) {
-                                        Files::new()
+                                        Files::new(&mut context)
                                             .search(&query, &mut context)
                                             .map(|x| (999, x))
                                             .collect_vec()
@@ -877,7 +880,7 @@ impl AsyncComponent for AppModel {
                                                 (
                                                     i,
                                                     Entry {
-                                                        name: x.name().to_owned(),
+                                                        name: FormattedString::plain(x.name()),
                                                         tag: None,
                                                         description: None,
                                                         icon: EntryIcon::from(
@@ -965,19 +968,21 @@ impl AsyncComponent for AppModel {
                 AppMsg::Show
             }),
             AppMsg::Reload => {
+                self.context = Arc::new(RwLock::new(Context::default()));
+
                 self.plugins.write().clear();
 
                 {
                     let sender = sender.clone();
                     let plugins = self.plugins_fn.clone();
+                    let context = self.context.clone();
                     tokio::spawn(async move {
+                        let mut context = context.write();
                         for plugin in plugins {
-                            sender.input(AppMsg::PluginLoaded(plugin()));
+                            sender.input(AppMsg::PluginLoaded(plugin(&mut context)));
                         }
                     });
                 }
-
-                self.context = Arc::new(RwLock::new(Context::default()));
 
                 sender.input(AppMsg::ScrollToStart);
             }
@@ -1205,10 +1210,10 @@ fn start() {
 macro_rules! plugin_vec {
     ( $( $x:path ),+ $(,)? ) => {
         {
-            let mut temp_vec: Vec<fn() -> Box<dyn Plugin>> = Vec::new();
+            let mut temp_vec: Vec<fn(&mut Context) -> Box<dyn Plugin>> = Vec::new();
             $(
-                temp_vec.push(|| {
-                    Box::new(<$x>::new())
+                temp_vec.push(|x| {
+                    Box::new(<$x>::new(x))
                 });
             )*
             temp_vec

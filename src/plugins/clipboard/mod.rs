@@ -1,10 +1,10 @@
-use crate::interface::Plugin;
+use crate::interface::{Context, Plugin};
 
 #[derive(Debug)]
 pub struct Clipboard {}
 
 impl Clipboard {
-    pub fn new() -> Self {
+    pub fn new(_: &mut Context) -> Self {
         Self {}
     }
 }
