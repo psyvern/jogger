@@ -21,6 +21,7 @@ pub struct DesktopEntry {
     name: String,
     description: Option<String>,
     icon: Option<String>,
+    file_path: PathBuf,
     path: Option<PathBuf>,
     categories: Vec<String>,
     keywords: Vec<String>,
@@ -71,6 +72,7 @@ impl DesktopEntry {
                 .or_else(|| value.generic_name(locales))
                 .map(String::from),
             icon: value.icon().map(str::to_owned),
+            file_path: value.path.clone(),
             path: value.desktop_entry("Path").map(PathBuf::from),
             categories: value
                 .desktop_entry("Categories")
@@ -348,19 +350,23 @@ impl DesktopEntry {
     }
 }
 
+fn escape(string: &str) -> String {
+    string.replace('&', "&amp;")
+}
+
 fn color_fuzzy_match(string: &str, indices: Vec<usize>) -> String {
     let mut buffer = String::new();
 
     let mut last = 0;
     for range in indices.into_iter().ranges() {
-        buffer.push_str(&string[last..range.start]);
+        buffer.push_str(&escape(&string[last..range.start]));
         last = range.end;
         buffer.push_str(&format!(
             "<span color=\"#A2C9FE\">{}</span>",
-            &string[range]
+            escape(&string[range])
         ));
     }
-    buffer.push_str(&string[last..]);
+    buffer.push_str(&escape(&string[last..]));
 
     buffer
 }
@@ -381,7 +387,14 @@ impl From<(&DesktopEntry, Option<String>)> for Entry {
             icon: EntryIcon::from(value.icon.clone()),
             small_icon: EntryIcon::None,
             actions: {
-                let mut vec = vec![EntryAction::Open(value.id.clone(), None, None).into()];
+                let mut vec = vec![
+                    EntryAction::Open(value.id.clone(), None, None).into(),
+                    (
+                        EntryAction::Open("Helix".to_owned(), None, Some(value.file_path.clone())),
+                        Key::e,
+                        ModifierType::CONTROL_MASK,
+                    ),
+                ];
                 vec.extend(value.actions.keys().enumerate().flat_map(|(i, x)| {
                     let key = match i {
                         0 => Key::_1,
@@ -410,7 +423,9 @@ impl From<(&DesktopEntry, Option<String>)> for Entry {
 }
 
 #[derive(Debug)]
-pub struct Applications {}
+pub struct Applications {
+    desktop_opener: String,
+}
 
 pub fn read_desktop_entries() -> Vec<DesktopEntry> {
     let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
@@ -458,7 +473,9 @@ pub fn read_desktop_entries() -> Vec<DesktopEntry> {
 
 impl Applications {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            desktop_opener: "Helix".to_owned(),
+        }
     }
 }
 
