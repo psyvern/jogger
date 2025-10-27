@@ -50,7 +50,7 @@ impl Files {
                             Entry {
                                 name: FormattedString::plain(".."),
                                 tag: None,
-                                description: Some("Go back".to_owned()),
+                                description: Some(FormattedString::plain("Go back")),
                                 icon: EntryIcon::Name("back".to_owned()),
                                 small_icon: EntryIcon::None,
                                 actions: vec![
@@ -135,7 +135,7 @@ impl Files {
         Some(Entry {
             name: FormattedString::plain(name),
             tag: None,
-            description: Some(desc),
+            description: Some(FormattedString::plain(desc)),
             icon: EntryIcon::Name(icon),
             small_icon: EntryIcon::from(small_icon),
             actions: if metadata.is_dir() || mime.as_str() == "inode/directory" {

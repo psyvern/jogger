@@ -101,12 +101,12 @@ impl Plugin for Ssh {
             .map(|x| Entry {
                 name: FormattedString::plain(&x.name),
                 tag: None,
-                description: Some(format!(
+                description: Some(FormattedString::plain(format!(
                     "{}{}{}",
                     x.user.clone().map(|x| x + "@").unwrap_or_default(),
                     x.address,
                     x.port.map(|x| format!(":{x}")).unwrap_or_default(),
-                )),
+                ))),
                 icon: EntryIcon::Name("network-wired".to_owned()),
                 small_icon: EntryIcon::None,
                 actions: vec![

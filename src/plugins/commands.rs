@@ -32,9 +32,12 @@ impl Plugin for Commands {
 
     fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
         vec![Entry {
-            name: FormattedString::from_styles(vec![(query.trim(), Some(FormatStyle::Monospace))]),
+            name: FormattedString::from_style(query.trim(), FormatStyle::Monospace),
             tag: None,
-            description: self.shell.as_ref().map(|x| format!("<tt>{x}</tt>")),
+            description: self
+                .shell
+                .as_ref()
+                .map(|x| FormattedString::from_style(x, FormatStyle::Monospace)),
             icon: EntryIcon::Name("terminal".to_owned()),
             small_icon: EntryIcon::None,
             actions: vec![EntryAction::Shell(query.trim().into()).into()],

@@ -44,13 +44,16 @@ impl From<&HyprlandClient> for Entry {
                 SelectionStatus::None => vec![(&value.title, None)],
                 _ => vec![("🞱 ", Some(FormatStyle::Special)), (&value.title, None)],
             }),
-            tag: Some(format!("Workspace {}", value.workspace)),
-            description: Some(
+            tag: Some(FormattedString::plain(format!(
+                "Workspace {}",
+                value.workspace
+            ))),
+            description: Some(FormattedString::plain(
                 value
                     .app_name
                     .clone()
                     .unwrap_or_else(|| value.class.clone()),
-            ),
+            )),
             icon: EntryIcon::Name(value.path.clone().unwrap_or("image-missing".to_owned())),
             small_icon: EntryIcon::None,
             actions: vec![

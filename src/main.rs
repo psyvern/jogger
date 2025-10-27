@@ -248,7 +248,7 @@ impl FactoryComponent for ListEntryComponent {
                                 Some(tag) => {
                                     Label {
                                         #[watch]
-                                        set_label: tag,
+                                        set_label: &tag.to_pango_escaped(),
                                         set_use_markup: true,
                                         set_ellipsize: EllipsizeMode::End,
                                         set_halign: Align::End,
@@ -267,7 +267,7 @@ impl FactoryComponent for ListEntryComponent {
                             Some(description) => {
                                 Label {
                                     #[watch]
-                                    set_label: description,
+                                    set_label: &description.to_pango_escaped(),
                                     set_use_markup: true,
                                     set_ellipsize: EllipsizeMode::End,
                                     set_halign: Align::Start,

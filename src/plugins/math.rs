@@ -1,10 +1,9 @@
-use std::fmt::Write;
 use std::time::Instant;
 
 use fend_core::SpanKind;
 use itertools::Itertools;
 
-use crate::interface::{Context, FormattedString};
+use crate::interface::{Context, FormatStyle, FormattedString};
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
 #[derive(Debug)]
@@ -47,45 +46,43 @@ impl Plugin for Math {
             Vec::new()
         } else {
             let mut spans = val.get_main_result_spans().collect_vec().into_iter();
-            let first = spans.take_while_ref(|x| x.kind() == SpanKind::Ident).fold(
-                String::new(),
-                |mut output, x| {
-                    let _ = write!(
-                        output,
-                        "<span color=\"#{:06X}\">{}</span>",
-                        if x.string() == "approx. " {
-                            0xA2C9FEu32
+            let mut parts = spans
+                .take_while_ref(|x| x.kind() == SpanKind::Ident)
+                .map(|x| {
+                    let x = x.string();
+                    (
+                        x,
+                        if x == "approx. " {
+                            Some(FormatStyle::Highlight)
                         } else {
-                            0xFFFFFF
+                            None
                         },
-                        x.string()
-                    );
-                    output
-                },
-            );
+                    )
+                })
+                .collect_vec();
             let string: String = spans
                 .take_while_ref(|x| x.kind() != SpanKind::Ident)
                 .filter(|x| !x.string().is_empty())
                 .map(|x| x.string().to_owned())
                 .collect();
-            let units = spans
+            parts.push((&string, None));
+            let units: String = spans
                 .filter(|x| !x.string().is_empty())
                 .enumerate()
                 .map(|(i, x)| {
                     // 0xA2C9FEFF
-                    gtk::glib::markup_escape_text(if i == 0 {
+                    if i == 0 {
                         x.string().trim_start()
                     } else {
                         x.string()
-                    })
-                    .to_string()
+                    }
                 })
                 .collect();
 
             let val = Entry {
-                name: FormattedString::plain(format!("{first}{string}")),
+                name: FormattedString::from_styles(parts),
                 tag: None,
-                description: Some(units),
+                description: Some(FormattedString::plain(units)),
                 icon: EntryIcon::Name("accessories-calculator".to_string()),
                 small_icon: EntryIcon::None,
                 actions: vec![

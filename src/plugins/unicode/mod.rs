@@ -1,12 +1,12 @@
 mod char;
 
-use std::ops::Range;
-
 use itertools::Itertools;
 
 use crate::plugins::unicode::char::Char;
 
-use crate::interface::{Context, Entry, EntryAction, EntryIcon, FormattedString, Plugin};
+use crate::interface::{
+    Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString, Plugin,
+};
 
 include!(concat!(env!("OUT_DIR"), "/data.rs"));
 
@@ -24,42 +24,10 @@ fn titlecase(s: &str) -> String {
     let mut result = String::new();
 
     for c in s.chars() {
-        match c {
-            '<' => result.push_str("&lt;"),
-            '>' => result.push_str("&gt;"),
-            _ => result.push(match last {
-                ' ' | '-' | '<' => c,
-                _ => c.to_ascii_lowercase(),
-            }),
-        }
-
-        last = c;
-    }
-
-    result
-}
-
-fn titlecase2(s: &str, color: Range<usize>) -> String {
-    let mut last = ' ';
-    let mut result = String::new();
-
-    for (i, c) in s.chars().enumerate() {
-        if i == color.start && i != color.end {
-            result.push_str("<span color=\"#A2C9FE\">");
-        }
-
-        match c {
-            '<' => result.push_str("&lt;"),
-            '>' => result.push_str("&gt;"),
-            _ => result.push(match last {
-                ' ' | '-' | '<' => c,
-                _ => c.to_ascii_lowercase(),
-            }),
-        }
-
-        if i + 1 == color.end {
-            result.push_str("</span>");
-        }
+        result.push(match last {
+            ' ' | '-' | '<' => c,
+            _ => c.to_ascii_lowercase(),
+        });
 
         last = c;
     }
@@ -93,10 +61,10 @@ impl Plugin for Unicode {
                 .map(|x| &DATA[x])
                 .map(|x| Entry {
                     name: FormattedString::plain(titlecase(x.name)),
-                    tag: Some(x.category.to_string()),
-                    description: Some(format!(
-                        "<span color=\"#A2C9FE\">{:04X}</span>",
-                        x.codepoint
+                    tag: Some(FormattedString::plain(x.category.to_string())),
+                    description: Some(FormattedString::from_style(
+                        format!("{:04X}", x.codepoint),
+                        FormatStyle::Highlight,
                     )),
                     icon: EntryIcon::Character(char_representation(x.scalar)),
                     small_icon: EntryIcon::None,
@@ -116,9 +84,12 @@ impl Plugin for Unicode {
                 .flat_map(|x| x.name.find(&query).map(|i| (i, x)))
                 .take(64)
                 .map(|(i, x)| Entry {
-                    name: FormattedString::plain(titlecase2(x.name, i..(i + query.len()))),
-                    tag: Some(x.category.to_string()),
-                    description: Some(format!("{:04X}", x.codepoint)),
+                    name: FormattedString {
+                        text: titlecase(x.name),
+                        ranges: vec![(FormatStyle::Highlight, i..(i + query.len()))],
+                    },
+                    tag: Some(FormattedString::plain(x.category.to_string())),
+                    description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
                     icon: EntryIcon::Character(char_representation(x.scalar)),
                     small_icon: EntryIcon::None,
                     actions: vec![EntryAction::Copy(x.scalar.to_string()).into()],
@@ -134,8 +105,8 @@ impl Plugin for Unicode {
                     .map(|x| &DATA[x])
                     .map(|x| Entry {
                         name: FormattedString::plain(titlecase(x.name)),
-                        tag: Some(x.category.to_string()),
-                        description: Some(format!("{:04X}", x.codepoint)),
+                        tag: Some(FormattedString::plain(x.category.to_string())),
+                        description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
                         icon: EntryIcon::Character(char_representation(x.scalar)),
                         small_icon: EntryIcon::None,
                         actions: vec![EntryAction::Copy(x.name.to_owned()).into()],
@@ -143,8 +114,8 @@ impl Plugin for Unicode {
                     })
                     .unwrap_or(Entry {
                         name: FormattedString::plain("<unknown>"),
-                        tag: Some("??".to_owned()),
-                        description: Some(format!("{:04X}", c as u32)),
+                        tag: Some(FormattedString::plain("??")),
+                        description: Some(FormattedString::plain(format!("{:04X}", c as u32))),
                         icon: EntryIcon::Character(c),
                         small_icon: EntryIcon::None,
                         actions: vec![],

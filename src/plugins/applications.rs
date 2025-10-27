@@ -22,7 +22,6 @@ pub struct DesktopEntry {
     description: Option<String>,
     icon: Option<String>,
     file_path: PathBuf,
-    path: Option<PathBuf>,
     categories: Vec<String>,
     keywords: Vec<String>,
     pub actions: HashMap<String, DesktopEntryAction>,
@@ -31,6 +30,7 @@ pub struct DesktopEntry {
     pub terminal: bool,
     pub terminal_args: TerminalArgs,
     pub(crate) mime_types: Vec<String>,
+    pub display: bool,
     frequency: u32,
 }
 
@@ -73,7 +73,6 @@ impl DesktopEntry {
                 .map(String::from),
             icon: value.icon().map(str::to_owned),
             file_path: value.path.clone(),
-            path: value.desktop_entry("Path").map(PathBuf::from),
             categories: value
                 .desktop_entry("Categories")
                 .map(|e| {
@@ -135,6 +134,7 @@ impl DesktopEntry {
                 .filter(|x| !x.is_empty())
                 .map(|x| x.to_string())
                 .collect(),
+            display: !value.no_display(),
             frequency: frequency
                 .iter()
                 .position(|x| x == value.id())
@@ -147,7 +147,12 @@ impl DesktopEntry {
         self.categories.contains(&"TerminalEmulator".to_owned())
     }
 
-    fn get_score(&self, query: &str, matcher: &SkimMatcherV2) -> Option<(u8, i64, Entry)> {
+    fn get_score(
+        &self,
+        query: &str,
+        matcher: &SkimMatcherV2,
+        desktop_file_opener: &str,
+    ) -> Option<(u8, i64, Entry)> {
         let name = matcher
             .fuzzy_indices(&self.name, query)
             .map(|x| (Kind::Name, x.0 * 4 / 3, x.1));
@@ -169,50 +174,107 @@ impl DesktopEntry {
 
         itertools::chain!(name, description, categories, keywords)
             .max_by_key(|x| x.1)
-            .map(|(kind, score, indices)| match kind {
-                Kind::Name => (
-                    7,
-                    score,
-                    Entry::from(&DesktopEntry {
-                        name: color_fuzzy_match(&self.name, indices),
-                        ..self.clone()
-                    }),
-                ),
-                Kind::Description => (
-                    6,
-                    score,
-                    Entry::from(&DesktopEntry {
-                        name: self.name.clone(),
-                        description: self
-                            .description
-                            .as_ref()
-                            .map(|x| color_fuzzy_match(x, indices)),
-                        ..self.clone()
-                    }),
-                ),
-                Kind::Keyword(i) => (
-                    5,
-                    score,
-                    Entry::from((
-                        self,
-                        Some(format!(
-                            "#{}",
-                            color_fuzzy_match(&self.keywords[i], indices)
-                        )),
-                    )),
-                ),
-                Kind::Category(i) => (
-                    4,
-                    score,
-                    Entry::from((
-                        self,
-                        Some(format!(
-                            "@{}",
-                            color_fuzzy_match(&self.categories[i], indices)
-                        )),
-                    )),
-                ),
+            .map(|(kind, score, indices)| {
+                let actions = self.get_actions(desktop_file_opener);
+
+                match kind {
+                    Kind::Name => (
+                        7,
+                        score,
+                        Entry {
+                            name: format_indices(&self.name, indices),
+                            tag: None,
+                            description: self.description.as_ref().map(FormattedString::plain),
+                            icon: EntryIcon::from(self.icon.clone()),
+                            small_icon: EntryIcon::None,
+                            actions,
+                            id: "".to_owned(),
+                        },
+                    ),
+                    Kind::Description => (
+                        6,
+                        score,
+                        Entry {
+                            name: FormattedString::plain(&self.name),
+                            tag: None,
+                            description: self
+                                .description
+                                .as_ref()
+                                .map(|x| format_indices(x, indices)),
+                            icon: EntryIcon::from(self.icon.clone()),
+                            small_icon: EntryIcon::None,
+                            actions,
+                            id: "".to_owned(),
+                        },
+                    ),
+                    Kind::Keyword(i) => (
+                        5,
+                        score,
+                        Entry {
+                            name: FormattedString::plain(&self.name),
+                            tag: Some(format_indices_with_prefix(&self.keywords[i], '#', indices)),
+                            description: self.description.as_ref().map(FormattedString::plain),
+                            icon: EntryIcon::from(self.icon.clone()),
+                            small_icon: EntryIcon::None,
+                            actions,
+                            id: "".to_owned(),
+                        },
+                    ),
+                    Kind::Category(i) => (
+                        4,
+                        score,
+                        Entry {
+                            name: FormattedString::plain(&self.name),
+                            tag: Some(format_indices_with_prefix(
+                                &self.categories[i],
+                                '@',
+                                indices,
+                            )),
+                            description: self.description.as_ref().map(FormattedString::plain),
+                            icon: EntryIcon::from(self.icon.clone()),
+                            small_icon: EntryIcon::None,
+                            actions,
+                            id: "".to_owned(),
+                        },
+                    ),
+                }
             })
+    }
+
+    fn get_actions(&self, desktop_file_opener: &str) -> Vec<(EntryAction, Key, ModifierType)> {
+        let mut vec = vec![
+            EntryAction::Open(self.id.clone(), None, None).into(),
+            (
+                EntryAction::Open(
+                    desktop_file_opener.to_owned(),
+                    None,
+                    Some(self.file_path.clone()),
+                ),
+                Key::e,
+                ModifierType::CONTROL_MASK,
+            ),
+        ];
+        vec.extend(self.actions.keys().enumerate().flat_map(|(i, x)| {
+            let key = match i {
+                0 => Key::_1,
+                1 => Key::_2,
+                2 => Key::_3,
+                3 => Key::_4,
+                4 => Key::_5,
+                5 => Key::_6,
+                6 => Key::_7,
+                7 => Key::_8,
+                8 => Key::_9,
+                9 => Key::_0,
+                _ => return None,
+            };
+            Some((
+                EntryAction::Open(self.id.clone(), Some(x.to_owned()), None),
+                key,
+                ModifierType::CONTROL_MASK,
+            ))
+        }));
+        vec
     }
 
     fn get_action_score(
@@ -246,9 +308,9 @@ impl DesktopEntry {
                     3,
                     score,
                     Entry {
-                        name: color_fuzzy_match2(&action.name, indices),
+                        name: format_indices(&action.name, indices),
                         tag: None,
-                        description: Some(self.name.clone()),
+                        description: Some(FormattedString::plain(&self.name)),
                         icon: EntryIcon::from(self.icon.clone()),
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
@@ -266,7 +328,7 @@ impl DesktopEntry {
                     Entry {
                         name: FormattedString::plain(&action.name),
                         tag: None,
-                        description: Some(color_fuzzy_match(&self.name, indices)),
+                        description: Some(format_indices(&self.name, indices)),
                         icon: EntryIcon::from(self.icon.clone()),
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
@@ -283,8 +345,8 @@ impl DesktopEntry {
                     score,
                     Entry {
                         name: FormattedString::plain(&action.name),
-                        tag: Some(color_fuzzy_match(&self.keywords[i], indices)),
-                        description: Some(self.name.clone()),
+                        tag: Some(format_indices_with_prefix(&self.keywords[i], '#', indices)),
+                        description: Some(FormattedString::plain(&self.name)),
                         icon: EntryIcon::from(self.icon.clone()),
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
@@ -301,11 +363,12 @@ impl DesktopEntry {
                     score,
                     Entry {
                         name: FormattedString::plain(&action.name),
-                        tag: Some(format!(
-                            "@{}",
-                            color_fuzzy_match(&self.categories[i], indices)
+                        tag: Some(format_indices_with_prefix(
+                            &self.categories[i],
+                            '@',
+                            indices,
                         )),
-                        description: Some(self.name.clone()),
+                        description: Some(FormattedString::plain(&self.name)),
                         icon: EntryIcon::from(self.icon.clone()),
                         small_icon: EntryIcon::Name(
                             action.icon.clone().unwrap_or("emblem-added".into()),
@@ -350,28 +413,7 @@ impl DesktopEntry {
     }
 }
 
-fn escape(string: &str) -> String {
-    string.replace('&', "&amp;")
-}
-
-fn color_fuzzy_match(string: &str, indices: Vec<usize>) -> String {
-    let mut buffer = String::new();
-
-    let mut last = 0;
-    for range in indices.into_iter().ranges() {
-        buffer.push_str(&escape(&string[last..range.start]));
-        last = range.end;
-        buffer.push_str(&format!(
-            "<span color=\"#A2C9FE\">{}</span>",
-            escape(&string[range])
-        ));
-    }
-    buffer.push_str(&escape(&string[last..]));
-
-    buffer
-}
-
-fn color_fuzzy_match2(string: &str, indices: Vec<usize>) -> FormattedString {
+fn format_indices(string: &str, indices: Vec<usize>) -> FormattedString {
     FormattedString {
         text: string.to_owned(),
         ranges: indices
@@ -382,54 +424,15 @@ fn color_fuzzy_match2(string: &str, indices: Vec<usize>) -> FormattedString {
     }
 }
 
-impl From<&DesktopEntry> for Entry {
-    fn from(value: &DesktopEntry) -> Self {
-        Self::from((value, None))
-    }
-}
-
-impl From<(&DesktopEntry, Option<String>)> for Entry {
-    fn from(value: (&DesktopEntry, Option<String>)) -> Self {
-        let (value, tag) = value;
-        Entry {
-            name: FormattedString::plain(&value.name),
-            tag,
-            description: value.description.clone(),
-            icon: EntryIcon::from(value.icon.clone()),
-            small_icon: EntryIcon::None,
-            actions: {
-                let mut vec = vec![
-                    EntryAction::Open(value.id.clone(), None, None).into(),
-                    (
-                        EntryAction::Open("Helix".to_owned(), None, Some(value.file_path.clone())),
-                        Key::e,
-                        ModifierType::CONTROL_MASK,
-                    ),
-                ];
-                vec.extend(value.actions.keys().enumerate().flat_map(|(i, x)| {
-                    let key = match i {
-                        0 => Key::_1,
-                        1 => Key::_2,
-                        2 => Key::_3,
-                        3 => Key::_4,
-                        4 => Key::_5,
-                        5 => Key::_6,
-                        6 => Key::_7,
-                        7 => Key::_8,
-                        8 => Key::_9,
-                        9 => Key::_0,
-                        _ => return None,
-                    };
-                    Some((
-                        EntryAction::Open(value.id.clone(), Some(x.to_owned()), None),
-                        key,
-                        ModifierType::CONTROL_MASK,
-                    ))
-                }));
-                vec
-            },
-            id: "".to_owned(),
-        }
+fn format_indices_with_prefix(string: &str, prefix: char, indices: Vec<usize>) -> FormattedString {
+    let offset = prefix.len_utf8();
+    FormattedString {
+        text: format!("{prefix}{string}"),
+        ranges: indices
+            .into_iter()
+            .ranges()
+            .map(|x| (FormatStyle::Highlight, (x.start + offset)..(x.end + offset)))
+            .collect(),
     }
 }
 
@@ -475,7 +478,6 @@ pub fn read_desktop_entries() -> Vec<DesktopEntry> {
     let locales = get_languages_from_env();
     freedesktop_desktop_entry::Iter::new(default_paths())
         .entries(Some(&locales))
-        .filter(|entry| !entry.no_display())
         .unique_by(|entry| entry.path.clone())
         .unique_by(|entry| (entry.id().to_owned(), entry.exec().map(str::to_owned)))
         .map(|entry| DesktopEntry::new(entry, &locales, &frequency, &ignored))
@@ -511,11 +513,20 @@ impl Plugin for Applications {
                 .apps
                 .app_map
                 .values()
+                .filter(|x| x.display)
                 .sorted_by(|a, b| match b.frequency.cmp(&a.frequency) {
                     Ordering::Equal => a.name.cmp(&b.name),
                     x => x,
                 })
-                .map(Into::into)
+                .map(|x| Entry {
+                    name: FormattedString::plain(&x.name),
+                    tag: None,
+                    description: x.description.as_ref().map(FormattedString::plain),
+                    icon: EntryIcon::from(x.icon.clone()),
+                    small_icon: EntryIcon::None,
+                    actions: x.get_actions(&self.desktop_file_opener),
+                    id: "".to_owned(),
+                })
                 .collect()
         } else {
             let matcher = fuzzy_matcher::skim::SkimMatcherV2::default().ignore_case();
@@ -530,6 +541,7 @@ impl Plugin for Applications {
                 .apps
                 .app_map
                 .values()
+                .filter(|x| x.display)
                 .flat_map(|entry| {
                     entry
                         .actions
@@ -537,7 +549,7 @@ impl Plugin for Applications {
                         .flat_map(|(id, action)| {
                             entry.get_action_score(id, action, query, &matcher)
                         })
-                        .chain(entry.get_score(query, &matcher))
+                        .chain(entry.get_score(query, &matcher, &self.desktop_file_opener))
                 })
                 .sorted_by_cached_key(|(a, b, _)| (*b, *a))
                 .rev()

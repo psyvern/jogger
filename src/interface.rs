@@ -81,6 +81,16 @@ impl FormattedString {
         }
     }
 
+    pub fn from_style(text: impl Into<String>, style: FormatStyle) -> Self {
+        let text = text.into();
+        let len = text.len();
+
+        Self {
+            text,
+            ranges: vec![(style, 0..len)],
+        }
+    }
+
     pub fn from_styles(ranges: Vec<(&str, Option<FormatStyle>)>) -> Self {
         let mut result = String::new();
         let mut res_ranges = Vec::new();
@@ -155,8 +165,8 @@ impl Ord for FormattedString {
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub name: FormattedString,
-    pub tag: Option<String>,
-    pub description: Option<String>,
+    pub tag: Option<FormattedString>,
+    pub description: Option<FormattedString>,
     pub icon: EntryIcon,
     pub small_icon: EntryIcon,
     pub actions: Vec<(EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType)>,
