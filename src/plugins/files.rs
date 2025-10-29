@@ -1,4 +1,4 @@
-use std::{fmt::Debug, fs::DirEntry, path::Path};
+use std::{fmt::Debug, fs::DirEntry, os::unix::fs::MetadataExt, path::Path};
 
 use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
@@ -114,11 +114,14 @@ impl Files {
     }
 
     fn file_to_entry(&self, database: &XdgAppDatabase, entry: DirEntry) -> Option<Entry> {
+        let path = entry.path();
+
         let metadata = entry.metadata().ok()?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        let mime = database.guess(entry.path()).mime;
+        let mime = database.guess(&path).mime;
 
+        let is_dir = metadata.is_dir() || mime.as_str() == "inode/directory";
         let app = database.default_for_mime(mime);
         let icon = database.mime_db.lookup_icon_name(mime);
         let desc = database
@@ -132,20 +135,62 @@ impl Files {
             None
         };
 
+        let size = if is_dir {
+            let count = std::fs::read_dir(&path).map(|x| x.count()).unwrap_or(0);
+            if count == 0 {
+                "Empty".to_owned()
+            } else {
+                format!("{count} items")
+            }
+        } else {
+            let mut size = metadata.size();
+            let mut decimal = 0;
+            let mut power = 0;
+
+            while size > 1024 {
+                decimal = size % 1024;
+                size /= 1024;
+                power += 1;
+            }
+
+            format!(
+                "{size}{} {}B",
+                if decimal == 0 {
+                    "".to_owned()
+                } else {
+                    format!(".{:02}", (decimal as f64 / 10.24).round())
+                },
+                match power {
+                    0 => "",
+                    1 => "k",
+                    2 => "M",
+                    3 => "G",
+                    4 => "T",
+                    5 => "P",
+                    6 => "E",
+                    7 => "Z",
+                    8 => "Y",
+                    9 => "R",
+                    10 => "Q",
+                    _ => "?",
+                }
+            )
+        };
+
         Some(Entry {
             name: FormattedString::plain(name),
-            tag: None,
+            tag: Some(FormattedString::plain(size)),
             description: Some(FormattedString::plain(desc)),
             icon: EntryIcon::Name(icon),
             small_icon: EntryIcon::from(small_icon),
-            actions: if metadata.is_dir() || mime.as_str() == "inode/directory" {
+            actions: if is_dir {
                 vec![
-                    EntryAction::Write(reduce_tilde(&entry.path(), &self.home_dir) + "/").into(),
+                    EntryAction::Write(reduce_tilde(&path, &self.home_dir) + "/").into(),
                     (
                         EntryAction::Open(
                             database.file_browser.clone().unwrap(),
                             None,
-                            Some(entry.path()),
+                            Some(path.clone()),
                         ),
                         Key::Return,
                         ModifierType::SHIFT_MASK,
@@ -154,7 +199,7 @@ impl Files {
                         EntryAction::LaunchTerminal {
                             program: None,
                             arguments: vec![],
-                            working_directory: Some(entry.path()),
+                            working_directory: Some(path.clone()),
                         },
                         Key::t,
                         ModifierType::CONTROL_MASK,
@@ -162,12 +207,12 @@ impl Files {
                 ]
             } else if let Some(app) = app {
                 vec![
-                    EntryAction::Open(app.id.clone(), None, Some(entry.path())).into(),
+                    EntryAction::Open(app.id.clone(), None, Some(path.clone())).into(),
                     (
                         EntryAction::Open(
                             database.file_browser.clone().unwrap(),
                             None,
-                            Some(entry.path()),
+                            Some(path.clone()),
                         ),
                         Key::Return,
                         ModifierType::SHIFT_MASK,
@@ -176,7 +221,7 @@ impl Files {
                         EntryAction::LaunchTerminal {
                             program: None,
                             arguments: vec![],
-                            working_directory: entry.path().parent().map(|x| x.to_owned()),
+                            working_directory: path.parent().map(|x| x.to_owned()),
                         },
                         Key::t,
                         ModifierType::CONTROL_MASK,
