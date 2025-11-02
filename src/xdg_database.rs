@@ -212,7 +212,7 @@ impl XdgAppDatabase {
         acc
     }
 
-    pub fn guess<P: AsRef<Path>>(&self, path: P) -> Guess {
+    pub fn guess<P: AsRef<Path>>(&self, path: P) -> Guess<'_> {
         use mediatype::{Name, names::*};
         use std::sync::LazyLock;
 
@@ -231,10 +231,7 @@ impl XdgAppDatabase {
         static TEXT_PLAIN: LazyLock<Mime> = LazyLock::new(|| Mime::new(TEXT, PLAIN));
 
         // Fill out the metadata
-        let metadata = match std::fs::metadata(&path) {
-            Ok(m) => Some(m),
-            Err(_) => None,
-        };
+        let metadata = std::fs::metadata(&path).ok();
 
         fn load_data_chunk<P: AsRef<Path>>(path: P, chunk_size: usize) -> Option<Vec<u8>> {
             let mut f = match File::open(&path) {
@@ -264,15 +261,14 @@ impl XdgAppDatabase {
             // Special type for directories
             if file_type.is_dir() {
                 // Special type for mount points
-                if let Some(parent) = path.as_ref().parent() {
-                    if let Ok(parent_metadata) = std::fs::metadata(parent) {
-                        if metadata.st_dev() != parent_metadata.st_dev() {
-                            return Guess {
-                                mime: &INODEMOUNT_POINT,
-                                uncertain: true,
-                            };
-                        }
-                    }
+                if let Some(parent) = path.as_ref().parent()
+                    && let Ok(parent_metadata) = std::fs::metadata(parent)
+                    && metadata.st_dev() != parent_metadata.st_dev()
+                {
+                    return Guess {
+                        mime: &INODEMOUNT_POINT,
+                        uncertain: true,
+                    };
                 }
 
                 return Guess {

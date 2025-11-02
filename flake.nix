@@ -80,9 +80,12 @@
 
               graphene
               gobject-introspection
+              libxkbcommon
             ];
 
             RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [ wayland ]);
           };
 
           nix = pkgs.mkShellNoCC {
