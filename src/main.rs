@@ -7,7 +7,12 @@ pub mod xdg_database;
 use std::collections::VecDeque;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use gpui::colors::Colors;
+use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::label::Label;
+use gtk::ffi::GtkShortcutLabel;
 /*use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
 use dbus_crossroads::Crossroads;
@@ -1228,55 +1233,114 @@ macro_rules! plugin_vec {
 use gpui::*;
 use gpui_component::{button::*, *};
 
-pub struct Example(Vec<Entry>);
+pub struct Example {
+    entries: Vec<Entry>,
+    input_state: Entity<InputState>,
+    selected_index: usize,
+}
+
 impl Render for Example {
-    fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let mut grid = div()
             .grid()
-            .grid_rows(5)
-            .grid_cols(6)
+            .grid_rows(0)
+            .grid_cols(5)
             // .v_flex()
-            // .gap_2()
+            .gap_2()
             .size_full()
             .items_center()
             .justify_center()
-            .child(
-                Button::new("ok")
-                    .primary()
-                    .label("Let's Go!")
-                    .font_family("Outfit")
-                    .on_click(|_, _, _| println!("Clicked!")),
-            );
+            .scrollable(Axis::Vertical);
 
-        for entry in &self.0 {
-            grid = grid.child(
-                div()
-                    .v_flex()
-                    .items_center()
-                    .child(match &entry.icon {
-                        EntryIcon::Name(name) => img(freedesktop_icons::lookup(name)
-                            .with_theme("Papirus")
-                            .with_size(256)
-                            .with_cache()
-                            .find()
-                            .unwrap_or_default())
-                        .w(px(48.0))
-                        .h(px(48.0))
-                        .into_element()
-                        .into_any(),
-                        EntryIcon::Path(path) => img(&**path)
-                            .w(px(48.0))
-                            .h(px(48.0))
-                            .into_element()
-                            .into_any(),
-                        EntryIcon::Character(c) => c.to_string().into_element().into_any(),
-                        EntryIcon::None => "".into_element().into_any(),
+        let query = self.input_state.read(cx).value().to_lowercase();
+
+        for (i, entry) in self.entries.iter().take(25).enumerate() {
+            if entry
+                .name
+                .to_pango_escaped()
+                .to_lowercase()
+                .contains(&query)
+            {
+                let id = SharedString::new(format!("btn-{i}"));
+                let action = entry.actions.first().cloned();
+
+                let custom = ButtonCustomVariant::new(cx)
+                    .color(if i == self.selected_index {
+                        rgb(0x272A2F).into()
+                    } else {
+                        cx.theme().transparent
                     })
-                    .child(entry.name.to_pango_escaped()),
-            )
+                    .foreground(cx.theme().primary_foreground)
+                    .border(if i == self.selected_index {
+                        rgb(0xA2C9FE).into()
+                    } else {
+                        rgba(0).into()
+                    })
+                    .hover(rgb(0x272A2F).into())
+                    .active(rgb(0x272A2F).into());
+
+                grid = grid.child(
+                    Button::new(id)
+                        .size_full()
+                        .custom(custom)
+                        .border_2()
+                        .rounded(px(12.0))
+                        .on_click(move |_, _, _| println!("{action:?}"))
+                        .child(
+                            div()
+                                .v_flex()
+                                .items_center()
+                                // .size_full()
+                                .flex_grow()
+                                .debug_pink()
+                                .child(match &entry.icon {
+                                    EntryIcon::Name(name) => img(freedesktop_icons::lookup(name)
+                                        .with_theme("Papirus")
+                                        .with_size(256)
+                                        .with_cache()
+                                        .find()
+                                        .unwrap_or_default())
+                                    .w(px(48.0))
+                                    .h(px(48.0))
+                                    .into_element()
+                                    .into_any(),
+                                    EntryIcon::Path(path) => img(&**path)
+                                        .w(px(48.0))
+                                        .h(px(48.0))
+                                        .into_element()
+                                        .into_any(),
+                                    EntryIcon::Character(c) => {
+                                        c.to_string().into_element().into_any()
+                                    }
+                                    EntryIcon::None => "".into_element().into_any(),
+                                })
+                                .font_family("Roboto")
+                                .font_weight(FontWeight::BOLD)
+                                .child(
+                                    v_flex().justify_center().debug_green().h(px(36.0)).child(
+                                        Label::new(entry.name.to_pango_escaped() + "\nciaoidso")
+                                            .debug_red()
+                                            .whitespace_normal()
+                                            .text_size(px(18.0))
+                                            .text_align(TextAlign::Center)
+                                            .line_height(px(18.0))
+                                            .line_clamp(2),
+                                    ),
+                                ),
+                        ),
+                )
+            }
         }
 
-        grid
+        let input = Input::new(&self.input_state).prefix(Icon::new(IconName::Search).small());
+
+        v_flex()
+            .size_full()
+            .bg(rgba(0x111418FF /* 0x111418EF */))
+            .p_2()
+            .gap_2()
+            .child(input)
+            .child(grid)
     }
 }
 
@@ -1295,10 +1359,6 @@ fn main() {
     let plugin = plugins::applications::Applications::new(&mut context);
     let results = plugin.search("", &mut context);
 
-    use freedesktop_icons::lookup;
-    let icon = lookup("firefox").with_theme("Papirus").find();
-    println!("{icon:#?}");
-
     let app = Application::new();
 
     app.run(move |cx| {
@@ -1306,11 +1366,24 @@ fn main() {
         gpui_component::init(cx);
 
         cx.spawn(async move |cx| {
-            cx.open_window(WindowOptions::default(), |window, cx| {
-                let view = cx.new(|_| Example(results));
-                // This first level on the window, should be a Root.
-                cx.new(|cx| Root::new(view.into(), window, cx))
-            })?;
+            cx.open_window(
+                WindowOptions {
+                    kind: WindowKind::Floating,
+                    window_background: WindowBackgroundAppearance::Transparent,
+                    ..Default::default()
+                },
+                |window, cx| {
+                    let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search..."));
+
+                    let view = cx.new(|_| Example {
+                        entries: results,
+                        input_state: search,
+                        selected_index: 0,
+                    });
+                    // This first level on the window, should be a Root.
+                    cx.new(|cx| Root::new(view.into(), window, cx))
+                },
+            )?;
 
             Ok::<_, anyhow::Error>(())
         })
