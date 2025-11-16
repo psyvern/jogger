@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::path::Path;
 use std::path::PathBuf;
 
-use gtk::Image;
+use gpui::Modifiers;
 
 use crate::xdg_database::XdgAppDatabase;
 
@@ -50,13 +50,9 @@ pub enum EntryAction {
     ChangePlugin(Option<usize>),
 }
 
-impl From<EntryAction> for (EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType) {
+impl From<EntryAction> for (EntryAction, String, Modifiers) {
     fn from(value: EntryAction) -> Self {
-        (
-            value,
-            gtk::gdk::Key::Return,
-            gtk::gdk::ModifierType::NO_MODIFIER_MASK,
-        )
+        (value, "enter".to_owned(), Modifiers::none())
     }
 }
 
@@ -169,7 +165,7 @@ pub struct Entry {
     pub description: Option<FormattedString>,
     pub icon: EntryIcon,
     pub small_icon: EntryIcon,
-    pub actions: Vec<(EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType)>,
+    pub actions: Vec<(EntryAction, String, Modifiers)>,
     pub id: String,
 }
 
@@ -197,13 +193,13 @@ impl EntryIcon {
         }
     }
 
-    pub fn to_gtk_image(&self) -> Image {
-        match self {
-            EntryIcon::Name(value) => Image::from_icon_name(value),
-            EntryIcon::Path(value) => Image::from_file(value),
-            _ => Image::new(),
-        }
-    }
+    // pub fn to_gtk_image(&self) -> Image {
+    //     match self {
+    //         EntryIcon::Name(value) => Image::from_icon_name(value),
+    //         EntryIcon::Path(value) => Image::from_file(value),
+    //         _ => Image::new(),
+    //     }
+    // }
 }
 
 impl From<Option<String>> for EntryIcon {

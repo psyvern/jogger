@@ -139,30 +139,30 @@ fn main() -> Result<()> {
     }
 
     for (name, data) in nerd_font_data.icons {
-        if let Ok(code) = u32::from_str_radix(data.code, 16) {
-            if let Some((category, name)) = name.split_once('-') {
-                vector.push(Char {
-                    scalar: char::from_u32(code).unwrap(),
-                    codepoint: code,
-                    name: name.to_uppercase().replace('_', " "),
-                    category: match category {
-                        "cod" => Category::Codicons,
-                        "custom" => Category::NfCustom,
-                        "dev" => Category::Devicons,
-                        "fa" | "fae" => Category::FontAwesome,
-                        "iec" => Category::IecPowerSymbols,
-                        "linux" => Category::FontLogos,
-                        "md" => Category::MaterialDesign,
-                        "oct" => Category::Octicons,
-                        "pl" | "ple" => Category::PowerlineSymbols,
-                        "pom" => Category::Pomicons,
-                        "seti" => Category::SetiUI,
-                        "weather" => Category::WeatherIcons,
-                        "extra" | "indent" | "indentation" => Category::SymbolOther,
-                        _ => panic!("Unexpected nerd font category: {category}"),
-                    },
-                })
-            }
+        if let Ok(code) = u32::from_str_radix(data.code, 16)
+            && let Some((category, name)) = name.split_once('-')
+        {
+            vector.push(Char {
+                scalar: char::from_u32(code).unwrap(),
+                codepoint: code,
+                name: name.to_uppercase().replace('_', " "),
+                category: match category {
+                    "cod" => Category::Codicons,
+                    "custom" => Category::NfCustom,
+                    "dev" => Category::Devicons,
+                    "fa" | "fae" => Category::FontAwesome,
+                    "iec" => Category::IecPowerSymbols,
+                    "linux" => Category::FontLogos,
+                    "md" => Category::MaterialDesign,
+                    "oct" => Category::Octicons,
+                    "pl" | "ple" => Category::PowerlineSymbols,
+                    "pom" => Category::Pomicons,
+                    "seti" => Category::SetiUI,
+                    "weather" => Category::WeatherIcons,
+                    "extra" | "indent" | "indentation" => Category::SymbolOther,
+                    _ => panic!("Unexpected nerd font category: {category}"),
+                },
+            })
         }
     }
 

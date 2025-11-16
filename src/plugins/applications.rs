@@ -6,7 +6,7 @@ use std::{cmp::Ordering, collections::HashMap};
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use gtk::gdk::{Key, ModifierType};
+use gpui::Modifiers;
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
@@ -241,7 +241,7 @@ impl DesktopEntry {
             })
     }
 
-    fn get_actions(&self, desktop_file_opener: &str) -> Vec<(EntryAction, Key, ModifierType)> {
+    fn get_actions(&self, desktop_file_opener: &str) -> Vec<(EntryAction, String, Modifiers)> {
         let mut vec = vec![
             EntryAction::Open(self.id.clone(), None, None).into(),
             (
@@ -250,28 +250,28 @@ impl DesktopEntry {
                     None,
                     Some(self.file_path.clone()),
                 ),
-                Key::e,
-                ModifierType::CONTROL_MASK,
+                "e".to_owned(),
+                Modifiers::control(),
             ),
         ];
         vec.extend(self.actions.keys().enumerate().flat_map(|(i, x)| {
             let key = match i {
-                0 => Key::_1,
-                1 => Key::_2,
-                2 => Key::_3,
-                3 => Key::_4,
-                4 => Key::_5,
-                5 => Key::_6,
-                6 => Key::_7,
-                7 => Key::_8,
-                8 => Key::_9,
-                9 => Key::_0,
+                0 => "1",
+                1 => "2",
+                2 => "3",
+                3 => "4",
+                4 => "5",
+                5 => "6",
+                6 => "7",
+                7 => "8",
+                8 => "9",
+                9 => "0",
                 _ => return None,
             };
             Some((
                 EntryAction::Open(self.id.clone(), Some(x.to_owned()), None),
-                key,
-                ModifierType::CONTROL_MASK,
+                key.to_owned(),
+                Modifiers::control(),
             ))
         }));
         vec

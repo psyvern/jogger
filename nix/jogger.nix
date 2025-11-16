@@ -41,7 +41,7 @@ in
       inherit lockFile;
 
       outputHashes = {
-        "gpui-component-0.4.0-preview0" = "";
+        "gpui-component-0.4.0-preview2" = "sha256-AAAA";
         "xdg-mime-0.4.0" = "sha256-OedRPppxbBixufaPwf2I3Vb3JzVHa0SWK2/tgnktR8M=";
       };
     };

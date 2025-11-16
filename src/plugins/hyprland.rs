@@ -1,6 +1,6 @@
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
-use gtk::gdk::{Key, ModifierType};
+use gpui::Modifiers;
 use hyprland::{
     data::{Clients, Workspace},
     shared::{Address, HyprData, HyprDataActive, HyprDataActiveOptional},
@@ -79,8 +79,8 @@ impl From<&HyprlandClient> for Entry {
                         ],
                         None,
                     ),
-                    Key::Return,
-                    ModifierType::SHIFT_MASK,
+                    "enter".to_owned(),
+                    Modifiers::shift(),
                 ),
                 (
                     EntryAction::Command(
@@ -95,8 +95,8 @@ impl From<&HyprlandClient> for Entry {
                         ],
                         None,
                     ),
-                    Key::f,
-                    ModifierType::CONTROL_MASK,
+                    "f".to_owned(),
+                    Modifiers::control(),
                 ),
                 (
                     EntryAction::Command(
@@ -109,8 +109,8 @@ impl From<&HyprlandClient> for Entry {
                         ],
                         None,
                     ),
-                    Key::q,
-                    ModifierType::CONTROL_MASK,
+                    "q".to_owned(),
+                    Modifiers::control(),
                 ),
             ],
             id: value.address.to_string(),

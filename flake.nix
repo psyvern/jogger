@@ -70,7 +70,7 @@
 
         devShells = {
           default = pkgs.mkShell {
-            inputsFrom = builtins.attrValues self'.packages;
+            # inputsFrom = builtins.attrValues self'.packages;
             packages = with pkgs; [
               rustc
               gcc
@@ -81,11 +81,18 @@
               graphene
               gobject-introspection
               libxkbcommon
+
+              dbus.dev
+              pkg-config
+            ];
+
+            buildInputs = with pkgs; [
+              libxcb
             ];
 
             RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
 
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [ wayland ]);
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [ vulkan-headers vulkan-loader wayland ]);
           };
 
           nix = pkgs.mkShellNoCC {

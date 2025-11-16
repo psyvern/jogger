@@ -1,6 +1,6 @@
 pub mod interface;
 mod plugins;
-mod search_entry;
+// mod search_entry;
 pub mod utils;
 pub mod xdg_database;
 
@@ -12,7 +12,7 @@ use std::sync::Arc;
 use gpui::colors::Colors;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::label::Label;
-use gtk::ffi::GtkShortcutLabel;
+// use gtk::ffi::GtkShortcutLabel;
 /*use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
 use dbus_crossroads::Crossroads;
@@ -45,8 +45,8 @@ use interface::{Entry, EntryAction, Plugin};
     Component, ComponentController, Controller, FactorySender, RelmApp, RelmWidgetExt,
     factory::{Position, positions::GridPosition},
     prelude::{DynamicIndex, FactoryComponent, FactoryVecDeque},
-};*/
-use search_entry::{SearchEntryModel, SearchEntryMsg};
+};
+use search_entry::{SearchEntryModel, SearchEntryMsg};*/
 
 use crate::interface::{Context, EntryIcon, FormattedString};
 use crate::plugins::files::Files;
@@ -1237,6 +1237,7 @@ pub struct Example {
     entries: Vec<Entry>,
     input_state: Entity<InputState>,
     selected_index: usize,
+    keystroke_count: usize,
 }
 
 impl Render for Example {
@@ -1285,18 +1286,18 @@ impl Render for Example {
                         .custom(custom)
                         .border_2()
                         .rounded(px(12.0))
+                        .p_2()
                         .on_click(move |_, _, _| println!("{action:?}"))
                         .child(
                             div()
                                 .v_flex()
                                 .items_center()
-                                // .size_full()
+                                .size_full()
                                 .flex_grow()
-                                .debug_pink()
                                 .child(match &entry.icon {
                                     EntryIcon::Name(name) => img(freedesktop_icons::lookup(name)
                                         .with_theme("Papirus")
-                                        .with_size(256)
+                                        .with_size(48)
                                         .with_cache()
                                         .find()
                                         .unwrap_or_default())
@@ -1314,18 +1315,22 @@ impl Render for Example {
                                     }
                                     EntryIcon::None => "".into_element().into_any(),
                                 })
-                                .font_family("Roboto")
+                                .font_family("Outfit")
                                 .font_weight(FontWeight::BOLD)
                                 .child(
-                                    v_flex().justify_center().debug_green().h(px(36.0)).child(
-                                        Label::new(entry.name.to_pango_escaped() + "\nciaoidso")
-                                            .debug_red()
-                                            .whitespace_normal()
-                                            .text_size(px(18.0))
-                                            .text_align(TextAlign::Center)
-                                            .line_height(px(18.0))
-                                            .line_clamp(2),
-                                    ),
+                                    v_flex()
+                                        .justify_center()
+                                        .max_w(px(126.0))
+                                        .h(px(36.0))
+                                        .child(
+                                            Label::new(entry.name.to_pango_escaped())
+                                                .whitespace_normal()
+                                                .text_size(px(18.0))
+                                                .text_align(TextAlign::Center)
+                                                .line_height(px(18.0))
+                                                .line_clamp(2)
+                                                .truncate(),
+                                        ),
                                 ),
                         ),
                 )
@@ -1341,6 +1346,7 @@ impl Render for Example {
             .gap_2()
             .child(input)
             .child(grid)
+            .child(Label::new(format!("{}", self.keystroke_count)).text_color(rgb(0xFFFFFF)))
     }
 }
 
@@ -1379,9 +1385,38 @@ fn main() {
                         entries: results,
                         input_state: search,
                         selected_index: 0,
+                        keystroke_count: 0,
                     });
+
+                    let view2 = view.clone();
+                    cx.intercept_keystrokes(move |event, window, app| {
+                        println!("{}", event.keystroke);
+
+                        if event.keystroke.key == "tab" {
+                            let shift = event.keystroke.modifiers.shift;
+                            view2.update(app, |state, cx| {
+                                state.selected_index = if shift {
+                                    if state.selected_index == 0 {
+                                        24
+                                    } else {
+                                        state.selected_index - 1
+                                    }
+                                } else {
+                                    (state.selected_index + 1) % 25
+                                };
+                                cx.notify();
+                                cx.stop_propagation();
+                            });
+                        }
+                        view2.update(app, |state, cx| {
+                            state.keystroke_count += 1;
+                            cx.notify();
+                        });
+                    })
+                    .detach();
+
                     // This first level on the window, should be a Root.
-                    cx.new(|cx| Root::new(view.into(), window, cx))
+                    cx.new(|cx| Root::new(view, window, cx))
                 },
             )?;
 

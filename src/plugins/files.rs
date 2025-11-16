@@ -1,6 +1,6 @@
 use std::{fmt::Debug, fs::DirEntry, os::unix::fs::MetadataExt, path::Path};
 
-use gtk::gdk::{Key, ModifierType};
+use gpui::Modifiers;
 use itertools::Itertools;
 
 use crate::{
@@ -61,8 +61,8 @@ impl Files {
                                             None,
                                             Some(parent.to_owned()),
                                         ),
-                                        Key::Return,
-                                        ModifierType::CONTROL_MASK,
+                                        "enter".to_owned(),
+                                        Modifiers::control(),
                                     ),
                                     (
                                         EntryAction::LaunchTerminal {
@@ -70,8 +70,8 @@ impl Files {
                                             arguments: vec![],
                                             working_directory: Some(path.clone()),
                                         },
-                                        Key::t,
-                                        ModifierType::CONTROL_MASK,
+                                        "t".to_owned(),
+                                        Modifiers::control(),
                                     ),
                                 ],
                                 id: "".to_owned(),
@@ -192,8 +192,8 @@ impl Files {
                             None,
                             Some(path.clone()),
                         ),
-                        Key::Return,
-                        ModifierType::SHIFT_MASK,
+                        "enter".to_owned(),
+                        Modifiers::shift(),
                     ),
                     (
                         EntryAction::LaunchTerminal {
@@ -201,8 +201,8 @@ impl Files {
                             arguments: vec![],
                             working_directory: Some(path.clone()),
                         },
-                        Key::t,
-                        ModifierType::CONTROL_MASK,
+                        "t".to_owned(),
+                        Modifiers::control(),
                     ),
                 ]
             } else if let Some(app) = app {
@@ -214,8 +214,8 @@ impl Files {
                             None,
                             Some(path.clone()),
                         ),
-                        Key::Return,
-                        ModifierType::SHIFT_MASK,
+                        "enter".to_owned(),
+                        Modifiers::shift(),
                     ),
                     (
                         EntryAction::LaunchTerminal {
@@ -223,8 +223,8 @@ impl Files {
                             arguments: vec![],
                             working_directory: path.parent().map(|x| x.to_owned()),
                         },
-                        Key::t,
-                        ModifierType::CONTROL_MASK,
+                        "t".to_owned(),
+                        Modifiers::control(),
                     ),
                 ]
             } else {
