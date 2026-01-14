@@ -42,6 +42,7 @@ impl Plugin for Commands {
             small_icon: EntryIcon::None,
             actions: vec![EntryAction::Shell(query.trim().into()).into()],
             id: "".to_owned(),
+            ..Default::default()
         }]
     }
 }

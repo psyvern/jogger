@@ -94,6 +94,7 @@ impl Plugin for Math {
                     .into(),
                 ],
                 id: "".to_owned(),
+                ..Default::default()
             };
 
             vec![val]

@@ -114,6 +114,7 @@ impl From<&HyprlandClient> for Entry {
                 ),
             ],
             id: value.address.to_string(),
+            ..Default::default()
         }
     }
 }

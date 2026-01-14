@@ -7,13 +7,19 @@ pub mod xdg_database;
 use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
 use dbus_crossroads::Crossroads;
-use gtk::gdk::{Key, ModifierType};
-use gtk::{CenterBox, Separator};
+use gtk::cairo::Region;
+use gtk::gdk::prelude::SurfaceExt;
+use gtk::gdk::{ContentProvider, Display, FileList, Key, ModifierType};
+use gtk::glib::translate::ToGlibPtr;
+use gtk::glib::value::ToValue;
+use gtk::prelude::NativeExt;
+use gtk::{CenterBox, DragSource, IconTheme, Separator};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use relm4::prelude::{AsyncComponent, AsyncComponentParts};
 use relm4::{AsyncComponentSender, view};
+use std::path::Path;
 use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -166,11 +172,60 @@ enum EntryMsg {
     Unselect,
 }
 
+fn create_drag_controller(
+    path: Option<impl AsRef<Path>>,
+    icon: Option<&str>,
+    sender: FactorySender<ListEntryComponent>,
+) -> DragSource {
+    let drag_source = DragSource::new();
+
+    if let Some(path) = path {
+        let path_clone = path.as_ref().to_path_buf();
+
+        drag_source.connect_prepare(move |_, _, _| {
+            let content = FileList::from_array(&[gtk::gio::File::for_path(&path_clone)]);
+            Some(ContentProvider::for_value(&content.to_value()))
+        });
+
+        if let Some(icon) = icon {
+            let theme = IconTheme::for_display(&Display::default().unwrap());
+            let icon = theme.lookup_icon(
+                icon,
+                &[],
+                48,
+                1,
+                gtk::TextDirection::Ltr,
+                gtk::IconLookupFlags::empty(),
+            );
+            drag_source.set_icon(Some(&icon), 0, 0);
+        }
+
+        let sender_clone = sender.clone();
+        drag_source.connect_drag_begin(move |_, _| {
+            sender_clone.output(ListEntryOutput::DragStart).unwrap();
+        });
+
+        let sender_clone = sender.clone();
+        drag_source.connect_drag_end(move |_, _, _| {
+            sender_clone.output(ListEntryOutput::DragEnd).unwrap();
+        });
+    }
+
+    drag_source
+}
+
+#[derive(Debug)]
+enum ListEntryOutput {
+    Activate(DynamicIndex),
+    DragStart,
+    DragEnd,
+}
+
 #[relm4::factory]
 impl FactoryComponent for ListEntryComponent {
     type Init = (usize, Rc<Entry>);
     type Input = EntryMsg;
-    type Output = DynamicIndex;
+    type Output = ListEntryOutput;
     type CommandOutput = ();
     type ParentWidget = ListBox;
 
@@ -181,8 +236,19 @@ impl FactoryComponent for ListEntryComponent {
             set_class_active: ("selected", self.selected),
 
             connect_activate[sender, index] => move |_| {
-                sender.output(index.clone()).unwrap()
+                sender.output(ListEntryOutput::Activate(index.clone())).unwrap()
             },
+
+            add_controller: create_drag_controller(
+                self.entry.drag_file.as_ref(),
+                match &self.entry.icon {
+                    EntryIcon::Name(name) => Some(name),
+                    // EntryIcon::Path(path_buf) => todo!(),
+                    // EntryIcon::Character(_) => todo!(),
+                    _ => None,
+                },
+                sender,
+            ),
 
             GBox {
                 set_orientation: Vertical,
@@ -331,6 +397,7 @@ enum AppMsg {
     Reload,
     SearchResults(Vec<(usize, Entry)>),
     PluginLoaded(Box<dyn Plugin>),
+    SetDragging(bool),
 }
 
 #[derive(Debug)]
@@ -349,6 +416,7 @@ struct AppModel {
     search_entry: Controller<SearchEntryModel>,
     visible: bool,
     context: Arc<RwLock<Context>>,
+    dragging: bool,
 }
 
 impl AppModel {
@@ -565,9 +633,12 @@ impl AsyncComponent for AppModel {
             set_visible: model.visible,
 
             init_layer_shell: (),
-            set_namespace: "jogger",
+            set_namespace: Some("jogger"),
             set_layer: Layer::Overlay,
             set_keyboard_mode: KeyboardMode::OnDemand,
+
+            #[watch]
+            set_opacity: if model.dragging { 0.25 } else { 1.0 },
 
             GBox {
                 set_orientation: Vertical,
@@ -678,8 +749,10 @@ impl AsyncComponent for AppModel {
     ) -> AsyncComponentParts<Self> {
         let list_entries = FactoryVecDeque::builder()
             .launch(gtk::ListBox::default())
-            .forward(sender.input_sender(), |index: DynamicIndex| {
-                AppMsg::Activate(index.current_index())
+            .forward(sender.input_sender(), |index| match index {
+                ListEntryOutput::Activate(index) => AppMsg::Activate(index.current_index()),
+                ListEntryOutput::DragStart => AppMsg::SetDragging(true),
+                ListEntryOutput::DragEnd => AppMsg::SetDragging(false),
             });
 
         let grid_entries = FactoryVecDeque::<GridEntryComponent>::builder()
@@ -716,6 +789,7 @@ impl AsyncComponent for AppModel {
             search_entry,
             visible: false,
             context: Arc::new(RwLock::new(Context::default())),
+            dragging: false,
         };
 
         let entries = model.list_entries.widget();
@@ -821,7 +895,7 @@ impl AsyncComponent for AppModel {
         &mut self,
         message: Self::Input,
         sender: AsyncComponentSender<Self>,
-        _: &Self::Root,
+        root: &Self::Root,
     ) {
         match message {
             AppMsg::Search(query) => {
@@ -892,6 +966,7 @@ impl AsyncComponent for AppModel {
                                                                 .into(),
                                                         ],
                                                         id: String::new(),
+                                                        ..Default::default()
                                                     },
                                                 )
                                             })
@@ -1141,6 +1216,21 @@ impl AsyncComponent for AppModel {
                     }
 
                     sender.input(AppMsg::Search(self.query.clone()));
+                }
+            }
+            AppMsg::SetDragging(dragging) => {
+                self.dragging = dragging;
+                if let Some(surface) = root.surface() {
+                    if dragging {
+                        surface.set_input_region(&Region::create());
+                    } else {
+                        unsafe {
+                            gdk::ffi::gdk_surface_set_input_region(
+                                surface.to_glib_none().0,
+                                core::ptr::null_mut(),
+                            );
+                        }
+                    }
                 }
             }
         }

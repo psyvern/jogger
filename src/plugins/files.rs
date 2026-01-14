@@ -75,6 +75,7 @@ impl Files {
                                     ),
                                 ],
                                 id: "".to_owned(),
+                                ..Default::default()
                             }
                         })
                         .into_iter()
@@ -181,7 +182,7 @@ impl Files {
             name: FormattedString::plain(name),
             tag: Some(FormattedString::plain(size)),
             description: Some(FormattedString::plain(desc)),
-            icon: EntryIcon::Name(icon),
+            icon: EntryIcon::Name(icon.clone()),
             small_icon: EntryIcon::from(small_icon),
             actions: if is_dir {
                 vec![
@@ -231,6 +232,7 @@ impl Files {
                 vec![]
             },
             id: "".to_owned(),
+            drag_file: Some(path),
         })
     }
 }

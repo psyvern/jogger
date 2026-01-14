@@ -189,6 +189,7 @@ impl DesktopEntry {
                             small_icon: EntryIcon::None,
                             actions,
                             id: "".to_owned(),
+                            ..Default::default()
                         },
                     ),
                     Kind::Description => (
@@ -205,6 +206,7 @@ impl DesktopEntry {
                             small_icon: EntryIcon::None,
                             actions,
                             id: "".to_owned(),
+                            ..Default::default()
                         },
                     ),
                     Kind::Keyword(i) => (
@@ -218,6 +220,7 @@ impl DesktopEntry {
                             small_icon: EntryIcon::None,
                             actions,
                             id: "".to_owned(),
+                            ..Default::default()
                         },
                     ),
                     Kind::Category(i) => (
@@ -235,6 +238,7 @@ impl DesktopEntry {
                             small_icon: EntryIcon::None,
                             actions,
                             id: "".to_owned(),
+                            ..Default::default()
                         },
                     ),
                 }
@@ -320,6 +324,7 @@ impl DesktopEntry {
                                 .into(),
                         ],
                         id: "".to_owned(),
+                        ..Default::default()
                     },
                 ),
                 Kind::Description => (
@@ -338,6 +343,7 @@ impl DesktopEntry {
                                 .into(),
                         ],
                         id: "".to_owned(),
+                        ..Default::default()
                     },
                 ),
                 Kind::Keyword(i) => (
@@ -356,6 +362,7 @@ impl DesktopEntry {
                                 .into(),
                         ],
                         id: "".to_owned(),
+                        ..Default::default()
                     },
                 ),
                 Kind::Category(i) => (
@@ -378,6 +385,7 @@ impl DesktopEntry {
                                 .into(),
                         ],
                         id: "".to_owned(),
+                        ..Default::default()
                     },
                 ),
             })
@@ -526,6 +534,7 @@ impl Plugin for Applications {
                     small_icon: EntryIcon::None,
                     actions: x.get_actions(&self.desktop_file_opener),
                     id: "".to_owned(),
+                    ..Default::default()
                 })
                 .collect()
         } else {

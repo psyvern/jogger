@@ -118,6 +118,7 @@ impl Plugin for Ssh {
                     .into(),
                 ],
                 id: "".to_owned(),
+                ..Default::default()
             })
             .collect()
     }

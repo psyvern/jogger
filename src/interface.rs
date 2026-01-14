@@ -67,7 +67,7 @@ pub enum FormatStyle {
     Monospace,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct FormattedString {
     pub text: String,
     pub ranges: Vec<(FormatStyle, Range<usize>)>,
@@ -162,7 +162,7 @@ impl Ord for FormattedString {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Entry {
     pub name: FormattedString,
     pub tag: Option<FormattedString>,
@@ -171,6 +171,7 @@ pub struct Entry {
     pub small_icon: EntryIcon,
     pub actions: Vec<(EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType)>,
     pub id: String,
+    pub drag_file: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default)]

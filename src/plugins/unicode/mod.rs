@@ -70,6 +70,7 @@ impl Plugin for Unicode {
                     small_icon: EntryIcon::None,
                     actions: vec![EntryAction::Copy(x.name.to_owned()).into()],
                     id: "".to_owned(),
+                    ..Default::default()
                 })
                 .into_iter()
                 .collect();
@@ -94,6 +95,7 @@ impl Plugin for Unicode {
                     small_icon: EntryIcon::None,
                     actions: vec![EntryAction::Copy(x.scalar.to_string()).into()],
                     id: "".to_owned(),
+                    ..Default::default()
                 })
                 .collect();
         }
@@ -111,6 +113,7 @@ impl Plugin for Unicode {
                         small_icon: EntryIcon::None,
                         actions: vec![EntryAction::Copy(x.name.to_owned()).into()],
                         id: "".to_owned(),
+                        ..Default::default()
                     })
                     .unwrap_or(Entry {
                         name: FormattedString::plain("<unknown>"),
@@ -120,6 +123,7 @@ impl Plugin for Unicode {
                         small_icon: EntryIcon::None,
                         actions: vec![],
                         id: "".to_owned(),
+                        ..Default::default()
                     })
             })
             .collect()
