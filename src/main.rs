@@ -19,11 +19,13 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use relm4::prelude::{AsyncComponent, AsyncComponentParts};
 use relm4::{AsyncComponentSender, view};
+use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
+use xdg::BaseDirectories;
 
 use gtk::{
     Align, Box as GBox, Button, Grid, Image, Justification, Label, ListBox, ListBoxRow,
@@ -403,6 +405,12 @@ enum AppMsg {
 #[derive(Debug)]
 enum CommandMsg {}
 
+#[derive(Debug, Deserialize, Default)]
+struct AppConfig {
+    drag_command: Option<String>,
+    drop_command: Option<String>,
+}
+
 struct AppModel {
     query: String,
     thread_handle: Option<stoppable_thread::StoppableHandle<()>>,
@@ -417,6 +425,7 @@ struct AppModel {
     visible: bool,
     context: Arc<RwLock<Context>>,
     dragging: bool,
+    config: AppConfig,
 }
 
 impl AppModel {
@@ -622,7 +631,7 @@ impl AsyncComponent for AppModel {
     type Output = ();
     type CommandOutput = CommandMsg;
 
-    type Init = Vec<fn(&mut Context) -> Box<dyn Plugin>>;
+    type Init = (AppConfig, Vec<fn(&mut Context) -> Box<dyn Plugin>>);
 
     view! {
         Window {
@@ -638,7 +647,7 @@ impl AsyncComponent for AppModel {
             set_keyboard_mode: KeyboardMode::OnDemand,
 
             #[watch]
-            set_opacity: if model.dragging { 0.25 } else { 1.0 },
+            set_class_active: ("dragging", model.dragging),
 
             GBox {
                 set_orientation: Vertical,
@@ -743,7 +752,7 @@ impl AsyncComponent for AppModel {
     }
 
     async fn init(
-        plugins: Self::Init,
+        init: Self::Init,
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
@@ -780,7 +789,7 @@ impl AsyncComponent for AppModel {
             query: String::new(),
             thread_handle: None,
             plugins: Arc::new(RwLock::new(Vec::new())),
-            plugins_fn: plugins.clone(),
+            plugins_fn: init.1.clone(),
             selected_plugin: None,
             selected_entry: 0,
             list_entries,
@@ -790,6 +799,7 @@ impl AsyncComponent for AppModel {
             visible: false,
             context: Arc::new(RwLock::new(Context::default())),
             dragging: false,
+            config: init.0,
         };
 
         let entries = model.list_entries.widget();
@@ -837,7 +847,7 @@ impl AsyncComponent for AppModel {
         let context = model.context.clone();
         tokio::spawn(async move {
             let mut context = context.write();
-            for plugin in plugins {
+            for plugin in init.1 {
                 sender.input(AppMsg::PluginLoaded(plugin(&mut context)));
             }
         });
@@ -1232,6 +1242,14 @@ impl AsyncComponent for AppModel {
                         }
                     }
                 }
+
+                if let Some(command) = if dragging {
+                    &self.config.drag_command
+                } else {
+                    &self.config.drop_command
+                } {
+                    Command::new("sh").arg("-c").arg(command).output().unwrap();
+                }
             }
         }
     }
@@ -1292,7 +1310,15 @@ fn start() {
         gtk::STYLE_PROVIDER_PRIORITY_USER,
     );
 
-    app.run_async::<AppModel>(plugins);
+    let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
+    let config = base_dirs.place_config_file("config.toml").unwrap();
+    let config = if std::fs::exists(&config).unwrap_or(false) {
+        let content = std::fs::read_to_string(&config).unwrap();
+        toml::from_str(&content).unwrap()
+    } else {
+        Default::default()
+    };
+    app.run_async::<AppModel>((config, plugins));
     // app.run::<AppModel>(plugins);
 }
 

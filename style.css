@@ -11,6 +11,11 @@ window {
     border-radius: 16px;
     border: 2px solid #FFFFFFAF;
     background-color: #111418EF;
+    transition: opacity 0.2s;
+}
+
+window.dragging {
+    opacity: 0.25;
 }
 
 list {
