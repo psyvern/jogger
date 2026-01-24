@@ -13,7 +13,7 @@ use gtk::gdk::{ContentProvider, Display, FileList, Key, ModifierType};
 use gtk::glib::translate::ToGlibPtr;
 use gtk::glib::value::ToValue;
 use gtk::prelude::NativeExt;
-use gtk::{CenterBox, DragSource, IconTheme, Separator};
+use gtk::{CenterBox, CssProvider, DragSource, IconTheme, Separator};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -426,6 +426,7 @@ struct AppModel {
     context: Arc<RwLock<Context>>,
     dragging: bool,
     config: AppConfig,
+    css_provider: CssProvider,
 }
 
 impl AppModel {
@@ -631,7 +632,11 @@ impl AsyncComponent for AppModel {
     type Output = ();
     type CommandOutput = CommandMsg;
 
-    type Init = (AppConfig, Vec<fn(&mut Context) -> Box<dyn Plugin>>);
+    type Init = (
+        AppConfig,
+        Vec<fn(&mut Context) -> Box<dyn Plugin>>,
+        CssProvider,
+    );
 
     view! {
         Window {
@@ -800,6 +805,7 @@ impl AsyncComponent for AppModel {
             context: Arc::new(RwLock::new(Context::default())),
             dragging: false,
             config: init.0,
+            css_provider: init.2,
         };
 
         let entries = model.list_entries.widget();
@@ -1070,6 +1076,22 @@ impl AsyncComponent for AppModel {
                 }
 
                 sender.input(AppMsg::ScrollToStart);
+
+                let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
+                let style = base_dirs.place_config_file("style.css").unwrap();
+
+                let display = gdk::Display::default().expect("Could not connect to a display.");
+                let provider = gtk::CssProvider::new();
+                provider.load_from_path(style);
+
+                gtk::style_context_remove_provider_for_display(&display, &self.css_provider);
+                gtk::style_context_add_provider_for_display(
+                    &display,
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_USER,
+                );
+
+                self.css_provider = provider;
             }
             AppMsg::Move(direction) => {
                 let use_grid = self.use_grid();
@@ -1299,18 +1321,29 @@ fn start() {
 
     let app = RelmApp::new("com.psyvern.jogger").with_args(Vec::new());
 
+    let display = gdk::Display::default().expect("Could not connect to a display.");
+    let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
+
     // The CSS "magic" happens here.
     let provider = gtk::CssProvider::new();
     provider.load_from_string(include_str!("../style.css"));
     // We give the CssProvided to the default screen so the CSS rules we added
     // can be applied to our window.
     gtk::style_context_add_provider_for_display(
-        &gdk::Display::default().expect("Could not connect to a display."),
+        &display,
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_USER,
     );
 
-    let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
+    let style = base_dirs.place_config_file("style.css").unwrap();
+    let provider = gtk::CssProvider::new();
+    provider.load_from_path(style);
+    gtk::style_context_add_provider_for_display(
+        &display,
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_USER,
+    );
+
     let config = base_dirs.place_config_file("config.toml").unwrap();
     let config = if std::fs::exists(&config).unwrap_or(false) {
         let content = std::fs::read_to_string(&config).unwrap();
@@ -1318,7 +1351,7 @@ fn start() {
     } else {
         Default::default()
     };
-    app.run_async::<AppModel>((config, plugins));
+    app.run_async::<AppModel>((config, plugins, provider));
     // app.run::<AppModel>(plugins);
 }
 
