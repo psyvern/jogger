@@ -5,6 +5,12 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use gtk::Image;
+use gtk::pango::AttrColor;
+use gtk::pango::AttrFontDesc;
+use gtk::pango::AttrList;
+use gtk::pango::Attribute;
+use gtk::pango::Color;
+use gtk::pango::FontDescription;
 
 use crate::xdg_database::XdgAppDatabase;
 
@@ -147,6 +153,34 @@ impl FormattedString {
         buffer.push_str(&escape(&self.text[last..]));
 
         buffer
+    }
+
+    pub fn to_attr_list(&self, highlight_color: &str) -> AttrList {
+        let list = AttrList::new();
+        let highlight: Attribute = {
+            let color = Color::parse(highlight_color).unwrap();
+            AttrColor::new_foreground(color.red(), color.green(), color.blue()).into()
+        };
+        let special: Attribute = {
+            let color = Color::parse("#FFAF00").unwrap();
+            AttrColor::new_foreground(color.red(), color.green(), color.blue()).into()
+        };
+        let monospace: Attribute =
+            AttrFontDesc::new(&FontDescription::from_string("monospace")).into();
+
+        for (style, range) in &self.ranges {
+            let mut attribute = match style {
+                FormatStyle::Highlight => highlight.clone(),
+                FormatStyle::Special => special.clone(),
+                FormatStyle::Monospace => monospace.clone(),
+            };
+
+            attribute.set_start_index(range.start as u32);
+            attribute.set_end_index(range.end as u32);
+            list.insert(attribute);
+        }
+
+        list
     }
 }
 

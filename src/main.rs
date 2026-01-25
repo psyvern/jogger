@@ -134,7 +134,7 @@ impl FactoryComponent for GridEntryComponent {
                 },
 
                 Label {
-                    set_label: &self.entry.name.to_pango_escaped(),
+                    set_label: &self.entry.name.text,
                     set_ellipsize: EllipsizeMode::End,
                     set_lines: 2,
                     set_vexpand: true,
@@ -166,6 +166,7 @@ struct ListEntryComponent {
     plugin: usize,
     entry: Rc<Entry>,
     selected: bool,
+    color: Rc<str>,
 }
 
 #[derive(Debug)]
@@ -225,7 +226,7 @@ enum ListEntryOutput {
 
 #[relm4::factory]
 impl FactoryComponent for ListEntryComponent {
-    type Init = (usize, Rc<Entry>);
+    type Init = (usize, Rc<Entry>, Rc<str>);
     type Input = EntryMsg;
     type Output = ListEntryOutput;
     type CommandOutput = ();
@@ -305,8 +306,8 @@ impl FactoryComponent for ListEntryComponent {
 
                         GBox {
                             Label {
-                                set_label: &self.entry.name.to_pango_escaped(),
-                                set_use_markup: true,
+                                set_label: &self.entry.name.text,
+                                set_attributes: Some(&self.entry.name.to_attr_list(&self.color)),
                                 set_ellipsize: EllipsizeMode::End,
                                 set_halign: Align::Start,
                                 add_css_class: "name",
@@ -316,8 +317,9 @@ impl FactoryComponent for ListEntryComponent {
                                 Some(tag) => {
                                     Label {
                                         #[watch]
-                                        set_label: &tag.to_pango_escaped(),
-                                        set_use_markup: true,
+                                        set_label: &tag.text,
+                                        #[watch]
+                                        set_attributes: Some(&tag.to_attr_list(&self.color)),
                                         set_ellipsize: EllipsizeMode::End,
                                         set_halign: Align::End,
                                         set_hexpand: true,
@@ -335,8 +337,9 @@ impl FactoryComponent for ListEntryComponent {
                             Some(description) => {
                                 Label {
                                     #[watch]
-                                    set_label: &description.to_pango_escaped(),
-                                    set_use_markup: true,
+                                    set_label: &description.text,
+                                    #[watch]
+                                    set_attributes: Some(&description.to_attr_list(&self.color)),
                                     set_ellipsize: EllipsizeMode::End,
                                     set_halign: Align::Start,
                                     add_css_class: "description",
@@ -358,6 +361,7 @@ impl FactoryComponent for ListEntryComponent {
             plugin: value.0,
             entry: value.1,
             selected: index.current_index() == 0,
+            color: value.2,
         }
     }
 
@@ -405,10 +409,16 @@ enum AppMsg {
 #[derive(Debug)]
 enum CommandMsg {}
 
+fn default_highlight_color() -> String {
+    "#A2C9FE".to_owned()
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct AppConfig {
     drag_command: Option<String>,
     drop_command: Option<String>,
+    #[serde(default = "default_highlight_color")]
+    highlight_color: String,
 }
 
 struct AppModel {
@@ -577,6 +587,7 @@ fn widget_for_keybind(description: &str, key: Key, modifier: ModifierType) -> GB
         res = GBox {
             Button {
                 add_css_class: "keybind",
+                set_can_focus: false,
 
                 GBox {
                     Label {
@@ -1092,6 +1103,16 @@ impl AsyncComponent for AppModel {
                 );
 
                 self.css_provider = provider;
+
+                let config = base_dirs.place_config_file("config.toml").unwrap();
+                let config = if std::fs::exists(&config).unwrap_or(false) {
+                    let content = std::fs::read_to_string(&config).unwrap();
+                    toml::from_str(&content).unwrap()
+                } else {
+                    Default::default()
+                };
+
+                self.config = config;
             }
             AppMsg::Move(direction) => {
                 let use_grid = self.use_grid();
@@ -1220,8 +1241,10 @@ impl AsyncComponent for AppModel {
                 let mut list_entries = self.list_entries.guard();
                 list_entries.clear();
 
+                let color = Rc::<str>::from(self.config.highlight_color.clone());
+
                 for (a, b) in entries {
-                    list_entries.push_back((a, Rc::new(b)));
+                    list_entries.push_back((a, Rc::new(b), color.clone()));
                 }
                 sender.input(AppMsg::ScrollToStart);
             }
