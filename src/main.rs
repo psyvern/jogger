@@ -96,6 +96,7 @@ impl FactoryComponent for GridEntryComponent {
             set_vexpand: true,
             #[watch]
             set_class_active: ("selected", self.selected),
+            set_cursor_from_name: Some("pointer"),
 
             connect_clicked[sender, index] => move |_| {
                 sender.output(index.clone()).unwrap();
@@ -239,6 +240,7 @@ impl FactoryComponent for ListEntryComponent {
         ListBoxRow {
             #[watch]
             set_class_active: ("selected", self.selected),
+            set_cursor_from_name: Some("pointer"),
 
             connect_activate[sender, index] => move |_| {
                 sender.output(ListEntryOutput::Activate(index.clone())).unwrap()
@@ -590,6 +592,7 @@ fn widget_for_keybind(description: &str, key: Key, modifier: ModifierType) -> GB
             Button {
                 add_css_class: "keybind",
                 set_can_focus: false,
+                set_cursor_from_name: Some("pointer"),
 
                 GBox {
                     Label {
@@ -678,6 +681,7 @@ impl AsyncComponent for AppModel {
 
                     Button {
                         set_focusable: false,
+                        set_cursor_from_name: Some("pointer"),
 
                         Image {
                             #[watch]
