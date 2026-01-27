@@ -155,12 +155,11 @@ impl FormattedString {
         buffer
     }
 
-    pub fn to_attr_list(&self, highlight_color: &str) -> AttrList {
+    pub fn to_attr_list(&self, highlight_color: [u16; 3]) -> AttrList {
         let list = AttrList::new();
-        let highlight: Attribute = {
-            let color = Color::parse(highlight_color).unwrap();
-            AttrColor::new_foreground(color.red(), color.green(), color.blue()).into()
-        };
+        let highlight: Attribute =
+            AttrColor::new_foreground(highlight_color[0], highlight_color[1], highlight_color[2])
+                .into();
         let special: Attribute = {
             let color = Color::parse("#FFAF00").unwrap();
             AttrColor::new_foreground(color.red(), color.green(), color.blue()).into()

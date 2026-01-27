@@ -1,3 +1,4 @@
+mod color;
 pub mod interface;
 mod plugins;
 mod search_entry;
@@ -47,6 +48,7 @@ use relm4::{
 };
 use search_entry::{SearchEntryModel, SearchEntryMsg};
 
+use crate::color::PangoColor;
 use crate::interface::{Context, EntryIcon, FormattedString};
 use crate::plugins::files::Files;
 use crate::utils::CommandExt;
@@ -166,7 +168,7 @@ struct ListEntryComponent {
     plugin: usize,
     entry: Rc<Entry>,
     selected: bool,
-    color: Rc<str>,
+    color: PangoColor,
 }
 
 #[derive(Debug)]
@@ -226,7 +228,7 @@ enum ListEntryOutput {
 
 #[relm4::factory]
 impl FactoryComponent for ListEntryComponent {
-    type Init = (usize, Rc<Entry>, Rc<str>);
+    type Init = (usize, Rc<Entry>, PangoColor);
     type Input = EntryMsg;
     type Output = ListEntryOutput;
     type CommandOutput = ();
@@ -307,7 +309,7 @@ impl FactoryComponent for ListEntryComponent {
                         GBox {
                             Label {
                                 set_label: &self.entry.name.text,
-                                set_attributes: Some(&self.entry.name.to_attr_list(&self.color)),
+                                set_attributes: Some(&self.entry.name.to_attr_list(self.color.into())),
                                 set_ellipsize: EllipsizeMode::End,
                                 set_halign: Align::Start,
                                 add_css_class: "name",
@@ -319,7 +321,7 @@ impl FactoryComponent for ListEntryComponent {
                                         #[watch]
                                         set_label: &tag.text,
                                         #[watch]
-                                        set_attributes: Some(&tag.to_attr_list(&self.color)),
+                                        set_attributes: Some(&tag.to_attr_list(self.color.into())),
                                         set_ellipsize: EllipsizeMode::End,
                                         set_halign: Align::End,
                                         set_hexpand: true,
@@ -339,7 +341,7 @@ impl FactoryComponent for ListEntryComponent {
                                     #[watch]
                                     set_label: &description.text,
                                     #[watch]
-                                    set_attributes: Some(&description.to_attr_list(&self.color)),
+                                    set_attributes: Some(&description.to_attr_list(self.color.into())),
                                     set_ellipsize: EllipsizeMode::End,
                                     set_halign: Align::Start,
                                     add_css_class: "description",
@@ -409,8 +411,8 @@ enum AppMsg {
 #[derive(Debug)]
 enum CommandMsg {}
 
-fn default_highlight_color() -> String {
-    "#A2C9FE".to_owned()
+fn default_highlight_color() -> PangoColor {
+    "#A2C9FE".parse().unwrap()
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -418,7 +420,7 @@ struct AppConfig {
     drag_command: Option<String>,
     drop_command: Option<String>,
     #[serde(default = "default_highlight_color")]
-    highlight_color: String,
+    highlight_color: PangoColor,
 }
 
 struct AppModel {
@@ -1241,10 +1243,8 @@ impl AsyncComponent for AppModel {
                 let mut list_entries = self.list_entries.guard();
                 list_entries.clear();
 
-                let color = Rc::<str>::from(self.config.highlight_color.clone());
-
                 for (a, b) in entries {
-                    list_entries.push_back((a, Rc::new(b), color.clone()));
+                    list_entries.push_back((a, Rc::new(b), self.config.highlight_color));
                 }
                 sender.input(AppMsg::ScrollToStart);
             }
