@@ -95,14 +95,6 @@ impl Component for SearchEntryModel {
                                 return Propagation::Stop;
                             }
                         }
-                        Key::Return | Key::KP_Enter if modifier == ModifierType::NO_MODIFIER_MASK  => {
-                            sender.output(SearchEntryMsg::Activate).unwrap();
-                            return Propagation::Stop;
-                        }
-                        Key::Escape => {
-                            sender.output(SearchEntryMsg::Close).unwrap();
-                            return Propagation::Stop;
-                        }
                         Key::r => {
                             if modifier.contains(ModifierType::CONTROL_MASK) {
                                 sender.output(SearchEntryMsg::Reload).unwrap();
@@ -112,6 +104,20 @@ impl Component for SearchEntryModel {
                         Key::F5 => {
                             sender.output(SearchEntryMsg::Reload).unwrap();
                             return Propagation::Stop;
+                        },
+                        _ => {}
+                    }
+
+                    Propagation::Proceed
+                },
+
+                connect_key_released[sender, root] => move |_, key, _, modifier| {
+                    match key {
+                        Key::Return | Key::KP_Enter if modifier == ModifierType::NO_MODIFIER_MASK  => {
+                            sender.output(SearchEntryMsg::Activate).unwrap();
+                        }
+                        Key::Escape => {
+                            sender.output(SearchEntryMsg::Close).unwrap();
                         }
                         _ => {
                             if modifier != ModifierType::NO_MODIFIER_MASK {
@@ -119,9 +125,7 @@ impl Component for SearchEntryModel {
                             }
                         }
                     };
-
-                    Propagation::Proceed
-                }
+                },
             }
         }
     }
