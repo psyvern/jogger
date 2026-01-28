@@ -20,7 +20,7 @@ pub struct DesktopEntry {
     pub id: String,
     name: String,
     description: Option<String>,
-    icon: Option<String>,
+    pub icon: Option<String>,
     file_path: PathBuf,
     categories: Vec<String>,
     keywords: Vec<String>,

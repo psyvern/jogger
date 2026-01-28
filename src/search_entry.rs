@@ -17,6 +17,7 @@ pub enum SearchEntryMsg {
     UnselectPlugin,
     Close,
     Reload,
+    ToggleActions,
 }
 
 pub struct SearchEntryModel {}
@@ -92,6 +93,12 @@ impl Component for SearchEntryModel {
                         Key::BackSpace => {
                             if is_empty {
                                 sender.output(SearchEntryMsg::UnselectPlugin).unwrap();
+                                return Propagation::Stop;
+                            }
+                        }
+                        Key::b => {
+                            if modifier.contains(ModifierType::CONTROL_MASK) {
+                                sender.output(SearchEntryMsg::ToggleActions).unwrap();
                                 return Propagation::Stop;
                             }
                         }

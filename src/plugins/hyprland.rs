@@ -57,58 +57,62 @@ impl From<&HyprlandClient> for Entry {
             icon: EntryIcon::Name(value.path.clone().unwrap_or("image-missing".to_owned())),
             small_icon: EntryIcon::None,
             actions: vec![
-                EntryAction::Command(
-                    "Focus window".to_owned(),
-                    "hyprctl".to_owned(),
-                    vec![
+                EntryAction::Command {
+                    name: "Focus window".to_owned(),
+                    icon: Some("window".into()),
+                    command: "hyprctl".to_owned(),
+                    args: vec![
                         "dispatch".to_owned(),
                         "focuswindow".to_owned(),
                         format!("address:{}", value.address),
                     ],
-                    None,
-                )
+                    path: None,
+                }
                 .into(),
                 (
-                    EntryAction::Command(
-                        "Move to current workspace".to_owned(),
-                        "hyprctl".to_owned(),
-                        vec![
+                    EntryAction::Command {
+                        name: "Move to current workspace".to_owned(),
+                        icon: Some("edit-move".into()),
+                        command: "hyprctl".to_owned(),
+                        args: vec![
                             "dispatch".to_owned(),
                             "movetoworkspace".to_owned(),
                             format!("+0,address:{}", value.address),
                         ],
-                        None,
-                    ),
+                        path: None,
+                    },
                     Key::Return,
                     ModifierType::SHIFT_MASK,
                 ),
                 (
-                    EntryAction::Command(
-                        "Toggle fullscreen".to_owned(),
-                        "hyprctl".to_owned(),
-                        vec![
+                    EntryAction::Command {
+                        name: "Toggle fullscreen".to_owned(),
+                        icon: Some("view-fullscreen".into()),
+                        command: "hyprctl".to_owned(),
+                        args: vec![
                             "--batch".to_owned(),
                             format!(
                                 "dispatch focuswindow address:{} ; dispatch fullscreen 0",
                                 value.address
                             ),
                         ],
-                        None,
-                    ),
+                        path: None,
+                    },
                     Key::f,
                     ModifierType::CONTROL_MASK,
                 ),
                 (
-                    EntryAction::Command(
-                        "Close window".to_owned(),
-                        "hyprctl".to_owned(),
-                        vec![
+                    EntryAction::Command {
+                        name: "Close window".to_owned(),
+                        icon: Some("window-close".into()),
+                        command: "hyprctl".to_owned(),
+                        args: vec![
                             "dispatch".to_owned(),
                             "closewindow".to_owned(),
                             format!("address:{}", value.address),
                         ],
-                        None,
-                    ),
+                        path: None,
+                    },
                     Key::q,
                     ModifierType::CONTROL_MASK,
                 ),

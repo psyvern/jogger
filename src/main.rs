@@ -14,7 +14,7 @@ use gtk::gdk::{ContentProvider, Display, FileList, Key, ModifierType};
 use gtk::glib::translate::ToGlibPtr;
 use gtk::glib::value::ToValue;
 use gtk::prelude::NativeExt;
-use gtk::{CenterBox, CssProvider, DragSource, IconTheme, Separator};
+use gtk::{CenterBox, CssProvider, DragSource, IconTheme, Orientation, Separator};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -401,9 +401,11 @@ enum AppMsg {
     Move(MoveDirection),
     ScrollToSelected,
     ScrollToStart,
+    Escape,
     Show,
     Hide,
     Toggle,
+    ToggleActions,
     Reload,
     SearchResults(Vec<(usize, Entry)>),
     PluginLoaded(Box<dyn Plugin>),
@@ -441,6 +443,7 @@ struct AppModel {
     dragging: bool,
     config: AppConfig,
     css_provider: CssProvider,
+    selected_action: Option<usize>,
 }
 
 impl AppModel {
@@ -548,7 +551,12 @@ impl AppModel {
                 //     )
                 //     .exec();
             }
-            EntryAction::Command(_, command, args, path) => {
+            EntryAction::Command {
+                command,
+                args,
+                path,
+                ..
+            } => {
                 sender.input(AppMsg::Hide);
 
                 Command::new(command)
@@ -571,75 +579,128 @@ impl AppModel {
     }
 }
 
-fn widget_for_action(action: &EntryAction, key: Key, modifier: ModifierType) -> GBox {
-    widget_for_keybind(
-        match action {
-            EntryAction::Command(name, _, _, _) => name,
-            EntryAction::Open(_, None, None) => "Run application",
-            EntryAction::Open(_, Some(_), None) => "Run action",
-            EntryAction::Open(_, _, Some(_)) => "Open",
-            EntryAction::Copy(_) => "Copy",
-            _ => "Run",
-        },
-        key,
-        modifier,
-    )
-}
-
-fn widget_for_keybind(description: &str, key: Key, modifier: ModifierType) -> GBox {
+fn widget_for_keybind(description: &str, key: Key, modifier: ModifierType) -> Button {
     view! {
-        res = GBox {
-            Button {
-                add_css_class: "keybind",
-                set_can_focus: false,
-                set_cursor_from_name: Some("pointer"),
+        res = Button {
+            add_css_class: "keybind",
+            set_can_focus: false,
+            set_cursor_from_name: Some("pointer"),
 
-                GBox {
-                    Label {
-                        set_label: description,
-                        add_css_class: "description",
-                    },
+            GBox {
+                Label {
+                    set_label: description,
+                    add_css_class: "description",
+                },
 
-                    Label {
-                        set_label: "keyboard_command_key",
-                        add_css_class: "key_symbol",
-                        set_visible: modifier.contains(ModifierType::SUPER_MASK),
-                    },
+                Label {
+                    set_label: "keyboard_command_key",
+                    add_css_class: "key_symbol",
+                    set_visible: modifier.contains(ModifierType::SUPER_MASK),
+                },
 
-                    Label {
-                        set_label: "keyboard_control_key",
-                        add_css_class: "key_symbol",
-                        set_visible: modifier.contains(ModifierType::CONTROL_MASK),
-                    },
+                Label {
+                    set_label: "keyboard_control_key",
+                    add_css_class: "key_symbol",
+                    set_visible: modifier.contains(ModifierType::CONTROL_MASK),
+                },
 
-                    Label {
-                        set_label: "keyboard_option_key",
-                        add_css_class: "key_symbol",
-                        set_visible: modifier.contains(ModifierType::ALT_MASK),
-                    },
+                Label {
+                    set_label: "keyboard_option_key",
+                    add_css_class: "key_symbol",
+                    set_visible: modifier.contains(ModifierType::ALT_MASK),
+                },
 
-                    Label {
-                        set_label: "shift_lock",
-                        add_css_class: "key_symbol",
-                        set_visible: modifier.contains(ModifierType::SHIFT_MASK),
-                    },
+                Label {
+                    set_label: "shift_lock",
+                    add_css_class: "key_symbol",
+                    set_visible: modifier.contains(ModifierType::SHIFT_MASK),
+                },
 
-                    Label {
-                        set_label: &match key {
-                            Key::Return => "keyboard_return".to_owned(),
-                            _ => key
-                                .name()
+                Label {
+                    set_label: &match key {
+                        Key::Return => "keyboard_return".to_owned(),
+                        _ => key
+                            .name()
                                 .map(|x| x.to_uppercase())
                                 .unwrap_or("<none>".to_owned()),
                         },
                         add_css_class: if key == Key::Return { "key_symbol" } else { "key" },
                     }
                 }
-            },
-        }
+            }
     }
 
     res
+}
+
+const MASK_ICONS: [(ModifierType, &str); 4] = [
+    (ModifierType::SUPER_MASK, "keyboard_command_key"),
+    (ModifierType::CONTROL_MASK, "keyboard_control_key"),
+    (ModifierType::ALT_MASK, "keyboard_option_key"),
+    (ModifierType::SHIFT_MASK, "shift"),
+];
+
+fn create_actions_box(
+    actions: &[(EntryAction, gtk::gdk::Key, ModifierType)],
+    index: usize,
+    context: &Context,
+) -> GBox {
+    let result = GBox::new(Orientation::Vertical, 0);
+    result.add_css_class("actions_box");
+
+    for (i, (action, key, modifier)) in actions.iter().enumerate() {
+        let action_box = GBox::default();
+        action_box.add_css_class("action");
+        action_box.set_class_active("selected", i == index);
+
+        {
+            let icon = Image::from_icon_name(&action.icon(context));
+            icon.set_pixel_size(24);
+            icon.set_halign(Align::Start);
+            icon.add_css_class("action_icon");
+            action_box.append(&icon);
+        }
+
+        {
+            let label = Label::new(Some(&action.description()));
+            label.set_halign(Align::Start);
+            label.set_hexpand(true);
+            label.add_css_class("action_name");
+            action_box.append(&label);
+        }
+
+        for (mask, icon) in MASK_ICONS {
+            if modifier.contains(mask) {
+                let label = Label::new(Some(icon));
+                label.add_css_class("key_symbol");
+                label.set_halign(Align::End);
+                label.set_valign(Align::Center);
+                action_box.append(&label);
+            }
+        }
+
+        {
+            let label = Label::new(Some(&match *key {
+                Key::Return => "keyboard_return".to_owned(),
+                _ => key
+                    .name()
+                    .map(|x| x.to_uppercase())
+                    .unwrap_or("<none>".to_owned()),
+            }));
+            label.set_halign(Align::End);
+            label.set_valign(Align::Center);
+            label.add_css_class(if *key == Key::Return {
+                "key_symbol"
+            } else {
+                "key"
+            });
+            action_box.append(&label);
+        }
+
+        result.append(&action_box);
+    }
+
+    result
 }
 
 #[relm4::component(async)]
@@ -699,28 +760,44 @@ impl AsyncComponent for AppModel {
                     append: model.search_entry.widget()
                 },
 
-                if model.use_grid() {
-                    &GBox {
-                        #[local_ref]
-                        entries_grid -> Grid {
-                            set_row_homogeneous: true,
-                            set_column_homogeneous: true,
-                            set_hexpand: true,
-                            set_vexpand: true,
-                            set_can_focus: false,
-                        },
-                    }
-                } else {
-                    scrolled_window = &ScrolledWindow {
-                        #[local_ref]
-                        entries -> ListBox {
-                            set_can_focus: false,
-
-                            connect_row_activated[sender] => move |_, row| {
-                                sender.input(AppMsg::Activate(row.index() as usize));
+                Overlay {
+                    if model.use_grid() {
+                        &GBox {
+                            #[local_ref]
+                            entries_grid -> Grid {
+                                set_row_homogeneous: true,
+                                set_column_homogeneous: true,
+                                set_hexpand: true,
+                                set_vexpand: true,
+                                set_can_focus: false,
                             },
-                        },
-                    }
+                        }
+                    } else {
+                        scrolled_window = &ScrolledWindow {
+                            #[local_ref]
+                            entries -> ListBox {
+                                set_can_focus: false,
+
+                                connect_row_activated[sender] => move |_, row| {
+                                    sender.input(AppMsg::Activate(row.index() as usize));
+                                },
+                            },
+                        }
+                    },
+
+                    add_overlay = &Overlay {
+                        set_halign: Align::End,
+                        set_valign: Align::End,
+                        #[watch]
+                        set_visible: model.selected_action.is_some(),
+
+                        #[watch]
+                        set_child: Some(&create_actions_box(
+                            model.current_entry().map_or(&[], |x| &x.actions),
+                            model.selected_action.unwrap_or(0),
+                            &model.context.read(),
+                        )),
+                    },
                 },
 
                 CenterBox {
@@ -757,7 +834,7 @@ impl AsyncComponent for AppModel {
                             #[watch]
                             set_end_widget: model.current_entry()
                                 .and_then(|x| x.actions.first())
-                                .map(|x| widget_for_action(&x.0, x.1, x.2))
+                                .map(|x| widget_for_keybind(&x.0.description(), x.1, x.2))
                                 .as_ref(),
                         },
 
@@ -766,7 +843,10 @@ impl AsyncComponent for AppModel {
                             add_css_class: "separator",
                         },
 
-                        append: &widget_for_keybind("Actions", Key::b, ModifierType::CONTROL_MASK),
+                        append = &widget_for_keybind("Actions", Key::b, ModifierType::CONTROL_MASK) -> Button {
+                            #[watch]
+                            set_class_active: ("selected", model.selected_action.is_some()),
+                        },
                     },
                 },
             },
@@ -803,7 +883,8 @@ impl AsyncComponent for AppModel {
                     SearchEntryMsg::Activate => AppMsg::ActivateSelected,
                     SearchEntryMsg::Shortcut(key, modifier) => AppMsg::Shortcut(key, modifier),
                     SearchEntryMsg::UnselectPlugin => AppMsg::ClearPrefix,
-                    SearchEntryMsg::Close => AppMsg::Hide,
+                    SearchEntryMsg::Close => AppMsg::Escape,
+                    SearchEntryMsg::ToggleActions => AppMsg::ToggleActions,
                     SearchEntryMsg::Reload => AppMsg::Reload,
                 });
 
@@ -823,6 +904,7 @@ impl AsyncComponent for AppModel {
             dragging: false,
             config: init.0,
             css_provider: init.2,
+            selected_action: None,
         };
 
         let entries = model.list_entries.widget();
@@ -1053,6 +1135,13 @@ impl AsyncComponent for AppModel {
                     }
                 }
             }
+            AppMsg::Escape => {
+                if self.selected_action.is_some() {
+                    self.selected_action = None;
+                } else {
+                    sender.input(AppMsg::Hide);
+                }
+            }
             AppMsg::Show => {
                 self.visible = true;
 
@@ -1064,6 +1153,7 @@ impl AsyncComponent for AppModel {
             }
             AppMsg::Hide => {
                 self.visible = false;
+                self.selected_action = None;
                 self.search_entry.widget().set_text("");
                 self.thread_handle = None;
                 self.selected_plugin = None;
@@ -1075,6 +1165,12 @@ impl AsyncComponent for AppModel {
             } else {
                 AppMsg::Show
             }),
+            AppMsg::ToggleActions => {
+                self.selected_action = match self.selected_action {
+                    Some(_) => None,
+                    None => Some(0),
+                }
+            }
             AppMsg::Reload => {
                 self.context = Arc::new(RwLock::new(Context::default()));
 
@@ -1121,6 +1217,24 @@ impl AsyncComponent for AppModel {
                 self.config = config;
             }
             AppMsg::Move(direction) => {
+                if let Some(action) = self.selected_action {
+                    let action = action as isize;
+                    let Some(entry) = self.current_entry() else {
+                        return;
+                    };
+                    let count = entry.actions.len() as isize;
+                    let action = match direction {
+                        MoveDirection::Back | MoveDirection::Up => action - 1,
+                        MoveDirection::Forward | MoveDirection::Down => action + 1,
+                        MoveDirection::Start => 0,
+                        MoveDirection::End => count - 1,
+                        _ => action,
+                    };
+
+                    self.selected_action = Some(action.rem_euclid(count) as usize);
+                    return;
+                }
+
                 let use_grid = self.use_grid();
                 if if use_grid {
                     self.grid_entries.is_empty()

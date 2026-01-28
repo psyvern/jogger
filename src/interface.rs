@@ -45,7 +45,13 @@ pub enum EntryAction {
     Copy(String),
     HyprctlExec(String),
     Shell(String),
-    Command(String, String, Vec<String>, Option<PathBuf>),
+    Command {
+        name: String,
+        icon: Option<String>,
+        command: String,
+        args: Vec<String>,
+        path: Option<PathBuf>,
+    },
     LaunchTerminal {
         program: Option<String>,
         arguments: Vec<String>,
@@ -54,6 +60,38 @@ pub enum EntryAction {
     Write(String),
     Open(String, Option<String>, Option<PathBuf>),
     ChangePlugin(Option<usize>),
+}
+
+impl EntryAction {
+    pub fn description(&self) -> String {
+        match self {
+            EntryAction::Command { name, .. } => name.to_owned(),
+            EntryAction::Open(_, None, None) => "Run application".to_owned(),
+            EntryAction::Open(_, Some(name), None) => name.to_owned(),
+            EntryAction::Open(_, _, Some(_)) => "Open".to_owned(),
+            EntryAction::Copy(_) => "Copy".to_owned(),
+            _ => "Run".to_owned(),
+        }
+    }
+
+    pub fn icon(&self, context: &Context) -> String {
+        match self {
+            EntryAction::Command { icon, .. } => icon
+                .as_ref()
+                .map(|x| x.to_owned())
+                .unwrap_or("image-missing".to_owned()),
+            EntryAction::Close => "message-close".to_owned(),
+            EntryAction::Copy(_) => "edit-copy".to_owned(),
+            EntryAction::Open(app, _, _) => context
+                .apps
+                .app_map
+                .get(app)
+                .and_then(|x| x.icon.as_ref())
+                .map(|x| x.to_owned())
+                .unwrap_or("image-missing".to_owned()),
+            _ => "image-missing".to_owned(),
+        }
+    }
 }
 
 impl From<EntryAction> for (EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType) {

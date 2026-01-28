@@ -160,7 +160,8 @@ row .small_icon {
     border-radius: 6px;
 }
 
-.keybind:hover {
+.keybind:hover,
+.keybind.selected {
     background-color: #272a2f;
 }
 
@@ -173,22 +174,22 @@ row .small_icon {
     color: inherit;
 }
 
-.keybind .key {
+.key {
     font-family: monospace;
     font-weight: 500;
     font-size: 16px;
-    padding: 1px 7px 0px 7px;
+    padding: 2px 7px 1px 7px;
     background-color: #43474e;
     border-radius: 4px;
     margin-left: 4px;
 }
 
-.keybind .key_symbol {
+.key_symbol {
     font-family: "Material Symbols Outlined";
     font-weight: 500;
     font-size: 20px;
     line-height: 0.8;
-    padding: 1px 2px 0px 2px;
+    padding: 2px 2px 1px 2px;
     background-color: #43474e;
     border-radius: 4px;
     margin-left: 4px;
@@ -200,30 +201,41 @@ row .small_icon {
     font-size: 15px;
 }
 
-.action {
-    box-shadow: none;
-    margin: 0 64px;
-    font-weight: 500;
-    font-size: 15px;
-
-    background: none;
-    background-color: transparent;
-
+.actions_box {
+    background-color: #111418;
+    border: 1px solid #8d9199;
+    box-shadow: 0 0 4px 2px black;
     border-radius: 12px;
-    border-width: 2px;
-    border-style: solid;
-    border-color: transparent;
-
-    transition-timing-function: ease-in-out;
-    transition-duration: 0.15s;
-    transition-property: background-color;
-    transition-property: border-color;
+    margin: 8px;
+    padding: 8px;
 }
 
-.action:selected,
-.action:focus,
-.action:hover {
-    background-color: #111418;
-    /* background-color: #272a2f; */
-    border-color: #a2c9fe;
+.actions_box .action {
+    padding: 6px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    border-width: 1.5px;
+    border-style: solid;
+    border-color: transparent;
+}
+
+.actions_box .action:last-child {
+    margin-bottom: 0px;
+}
+
+.actions_box .action:hover,
+.actions_box .action.selected {
+    background-color: #272A2F;
+}
+
+.actions_box .action.selected {
+    border-color: #B0A0FD;
+    background-color: #272A2F;
+}
+
+.actions_box .action .action_name {
+    font-weight: 500;
+    font-size: 15px;
+    margin-left: 8px;
+    margin-right: 12px;
 }
