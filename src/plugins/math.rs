@@ -90,6 +90,7 @@ impl Plugin for Math {
                         val.get_main_result()
                             .trim_start_matches("approx. ")
                             .to_owned(),
+                        None,
                     )
                     .into(),
                 ],

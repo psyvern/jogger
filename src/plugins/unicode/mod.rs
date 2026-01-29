@@ -68,7 +68,7 @@ impl Plugin for Unicode {
                     )),
                     icon: EntryIcon::Character(char_representation(x.scalar)),
                     small_icon: EntryIcon::None,
-                    actions: vec![EntryAction::Copy(x.name.to_owned()).into()],
+                    actions: vec![EntryAction::Copy(x.name.to_owned(), None).into()],
                     id: "".to_owned(),
                     ..Default::default()
                 })
@@ -93,7 +93,7 @@ impl Plugin for Unicode {
                     description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
                     icon: EntryIcon::Character(char_representation(x.scalar)),
                     small_icon: EntryIcon::None,
-                    actions: vec![EntryAction::Copy(x.scalar.to_string()).into()],
+                    actions: vec![EntryAction::Copy(x.scalar.to_string(), None).into()],
                     id: "".to_owned(),
                     ..Default::default()
                 })
@@ -111,7 +111,7 @@ impl Plugin for Unicode {
                         description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
                         icon: EntryIcon::Character(char_representation(x.scalar)),
                         small_icon: EntryIcon::None,
-                        actions: vec![EntryAction::Copy(x.name.to_owned()).into()],
+                        actions: vec![EntryAction::Copy(x.name.to_owned(), None).into()],
                         id: "".to_owned(),
                         ..Default::default()
                     })

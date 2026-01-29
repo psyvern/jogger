@@ -1,0 +1,260 @@
+$surface: #111418;
+$surfaceDim: #111418;
+$surfaceBright: #37393e;
+$surfaceContainerLowest: #0b0e13;
+$surfaceContainerLow: #191c20;
+$surfaceContainer: #1d2024;
+$surfaceContainerHigh: #272a2f;
+$surfaceContainerHighest: #32353a;
+$surfaceVariant: #43474e;
+$outline: #8d9199;
+
+$error: #ffb4ab;
+$onError: #690005;
+$errorContainer: #93000a;
+
+* {
+    all: unset;
+    color: unset;
+    border-color: unset;
+}
+
+placeholder {
+    opacity: 0.5;
+}
+
+window {
+    border-radius: 16px;
+    border: 2px solid #FFFFFFAF;
+    background-color: transparentize($surface, 0.05);
+    transition: opacity 0.2s;
+}
+
+window.dragging {
+    opacity: 0.25;
+}
+
+list {
+    margin-top: 8px;
+    background-color: unset;
+}
+
+grid {
+    margin: 4px;
+
+    >button {
+        all: unset;
+        padding: 0 8px;
+        margin: 4px;
+
+        border-style: solid;
+        border-color: transparent;
+        border-radius: 12px;
+        border-width: 2px;
+
+        &:hover {
+            background-color: $surfaceContainer;
+        }
+
+        &.selected {
+            background-color: $surfaceContainerHigh;
+            border-color: $accent;
+        }
+
+        .icon {
+            -gtk-icon-shadow: 0 0 10px $surface;
+        }
+    }
+}
+
+row {
+    padding: 12px;
+    margin: 0 8px 8px 8px;
+
+    background-color: transparent;
+
+    border-radius: 12px;
+    border-width: 2px;
+    border-style: solid;
+    border-color: transparent;
+
+    &:hover {
+        background-color: $surfaceContainer;
+    }
+
+    &.selected {
+        background-color: $surfaceContainerHigh;
+        border-color: $accent;
+    }
+
+    .icon {
+        -gtk-icon-shadow: 0 0 10px $surface;
+        font-size: 40px;
+        font-weight: bold;
+        font-family: monospace;
+    }
+
+    .small_icon {
+        -gtk-icon-shadow: 0px 0px 5px $surface;
+    }
+}
+
+#search_bar {
+    margin: 0 8px;
+    padding: 8px 0 4px 0;
+    /* border-radius: 12px; */
+    /* background-color: $surfaceContainerHigh; */
+    border-bottom: $outline 1px solid;
+
+    >entry {
+        all: unset;
+
+        margin: 6px;
+        font-size: 16px;
+    }
+
+    &.error {
+        background-color: $error;
+        color: $onError;
+    }
+
+    >button {
+        all: unset;
+
+        padding: 6px 8px;
+        border-radius: 6px;
+
+        &:hover {
+            background-color: $surfaceContainerHigh;
+        }
+    }
+}
+
+#action_bar {
+    margin: 0 8px;
+    padding: 4px 0 8px 0;
+    border-top: $outline 1px solid;
+}
+
+entry {
+    >text>selection {
+        background-color: transparentize($accent, 0.5);
+    }
+
+    &.error {
+        background-color: $error;
+        color: $onError;
+        caret-color: $onError;
+    }
+}
+
+.texts {
+    margin-left: 16px;
+}
+
+.grid_name {
+    font-weight: 600;
+    font-size: 15px;
+
+    margin: 4px 0;
+}
+
+.name {
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.tag {
+    font-weight: 500;
+    font-size: 15px;
+
+    padding: 0 4px;
+    background-color: $surfaceVariant;
+    border-radius: 4px;
+}
+
+.keybind {
+    padding: 6px;
+    border-radius: 6px;
+
+    &:hover,
+    &.selected {
+        background-color: $surfaceContainerHigh;
+    }
+
+    .description {
+        margin-right: 4px;
+        color: inherit;
+    }
+}
+
+.separator {
+    margin: 8px;
+}
+
+.key {
+    font-family: monospace;
+    font-size: 16px;
+    padding: 2px 7px 1px 7px;
+}
+
+.key_symbol {
+    font-family: "Material Symbols Outlined";
+    font-size: 20px;
+    line-height: 0.8;
+    padding: 2px 2px 1px 2px;
+}
+
+.key,
+.key_symbol {
+    font-weight: 500;
+    background-color: $surfaceVariant;
+    border-radius: 4px;
+    margin-left: 4px;
+    box-shadow: 0 0 8px black;
+}
+
+.description {
+    font-weight: 500;
+    color: $outline;
+    font-size: 15px;
+}
+
+.actions_box {
+    background-color: $surface;
+    min-width: 240px;
+    border: 1.5px solid $outline;
+    box-shadow: 0 0 4px 2px black;
+    border-radius: 12px;
+    margin: 8px;
+    padding: 8px;
+
+    .action {
+        padding: 8px;
+        border-radius: 8px;
+        margin-bottom: 4px;
+        border-width: 1.5px;
+        border-style: solid;
+        border-color: transparent;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+
+        &:hover {
+            background-color: $surfaceContainer;
+        }
+
+        &.selected {
+            border-color: $accent;
+            background-color: $surfaceContainerHigh;
+        }
+
+        .action_name {
+            font-weight: 500;
+            font-size: 15px;
+            margin-left: 8px;
+            margin-right: 12px;
+        }
+    }
+}

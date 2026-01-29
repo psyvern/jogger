@@ -247,37 +247,61 @@ impl DesktopEntry {
 
     fn get_actions(&self, desktop_file_opener: &str) -> Vec<(EntryAction, Key, ModifierType)> {
         let mut vec = vec![
-            EntryAction::Open(self.id.clone(), None, None).into(),
+            EntryAction::Open(self.id.clone(), None, None, None).into(),
             (
                 EntryAction::Open(
                     desktop_file_opener.to_owned(),
                     None,
                     Some(self.file_path.clone()),
+                    Some("Open location".into()),
                 ),
                 Key::e,
                 ModifierType::CONTROL_MASK,
             ),
-        ];
-        vec.extend(self.actions.keys().enumerate().flat_map(|(i, x)| {
-            let key = match i {
-                0 => Key::_1,
-                1 => Key::_2,
-                2 => Key::_3,
-                3 => Key::_4,
-                4 => Key::_5,
-                5 => Key::_6,
-                6 => Key::_7,
-                7 => Key::_8,
-                8 => Key::_9,
-                9 => Key::_0,
-                _ => return None,
-            };
-            Some((
-                EntryAction::Open(self.id.clone(), Some(x.to_owned()), None),
-                key,
+            (
+                EntryAction::Copy(self.id.clone(), Some("Copy app id".into())),
+                Key::c,
                 ModifierType::CONTROL_MASK,
-            ))
-        }));
+            ),
+            (
+                EntryAction::Copy(
+                    self.file_path.to_string_lossy().into(),
+                    Some("Copy location".into()),
+                ),
+                Key::c,
+                ModifierType::CONTROL_MASK | ModifierType::SHIFT_MASK,
+            ),
+        ];
+        vec.extend(
+            self.actions
+                .iter()
+                .enumerate()
+                .flat_map(|(i, (x, action))| {
+                    let key = match i {
+                        0 => Key::_1,
+                        1 => Key::_2,
+                        2 => Key::_3,
+                        3 => Key::_4,
+                        4 => Key::_5,
+                        5 => Key::_6,
+                        6 => Key::_7,
+                        7 => Key::_8,
+                        8 => Key::_9,
+                        9 => Key::_0,
+                        _ => return None,
+                    };
+                    Some((
+                        EntryAction::Open(
+                            self.id.clone(),
+                            Some(x.to_owned()),
+                            None,
+                            Some(action.name.clone()),
+                        ),
+                        key,
+                        ModifierType::CONTROL_MASK,
+                    ))
+                }),
+        );
         vec
     }
 
@@ -320,8 +344,13 @@ impl DesktopEntry {
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
                         actions: vec![
-                            EntryAction::Open(self.id.clone(), Some(action_id.to_owned()), None)
-                                .into(),
+                            EntryAction::Open(
+                                self.id.clone(),
+                                Some(action_id.to_owned()),
+                                None,
+                                None,
+                            )
+                            .into(),
                         ],
                         id: "".to_owned(),
                         ..Default::default()
@@ -339,8 +368,13 @@ impl DesktopEntry {
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
                         actions: vec![
-                            EntryAction::Open(self.id.clone(), Some(action_id.to_owned()), None)
-                                .into(),
+                            EntryAction::Open(
+                                self.id.clone(),
+                                Some(action_id.to_owned()),
+                                None,
+                                None,
+                            )
+                            .into(),
                         ],
                         id: "".to_owned(),
                         ..Default::default()
@@ -358,8 +392,13 @@ impl DesktopEntry {
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
                         actions: vec![
-                            EntryAction::Open(self.id.clone(), Some(action_id.to_owned()), None)
-                                .into(),
+                            EntryAction::Open(
+                                self.id.clone(),
+                                Some(action_id.to_owned()),
+                                None,
+                                None,
+                            )
+                            .into(),
                         ],
                         id: "".to_owned(),
                         ..Default::default()
@@ -381,8 +420,13 @@ impl DesktopEntry {
                             action.icon.clone().unwrap_or("emblem-added".into()),
                         ),
                         actions: vec![
-                            EntryAction::Open(self.id.clone(), Some(action_id.to_owned()), None)
-                                .into(),
+                            EntryAction::Open(
+                                self.id.clone(),
+                                Some(action_id.to_owned()),
+                                None,
+                                None,
+                            )
+                            .into(),
                         ],
                         id: "".to_owned(),
                         ..Default::default()

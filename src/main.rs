@@ -473,7 +473,7 @@ impl AppModel {
                 self.selected_plugin = *plugin;
                 self.search_entry.emit(String::new());
             }
-            EntryAction::Open(app, action, path) => {
+            EntryAction::Open(app, action, path, _) => {
                 let context = self.context.read();
                 if let Some(app) = context.apps.app_map.get(app) {
                     let args = match path {
@@ -525,7 +525,7 @@ impl AppModel {
                     }
                 }
             }
-            EntryAction::Copy(value) => {
+            EntryAction::Copy(value, _) => {
                 let mut opts = wl_clipboard_rs::copy::Options::new();
                 opts.foreground(true);
                 opts.copy(
@@ -846,6 +846,10 @@ impl AsyncComponent for AppModel {
                         append = &widget_for_keybind("Actions", Key::b, ModifierType::CONTROL_MASK) -> Button {
                             #[watch]
                             set_class_active: ("selected", model.selected_action.is_some()),
+
+                            connect_clicked[sender] => move |_| {
+                                sender.input(AppMsg::ToggleActions);
+                            },
                         },
                     },
                 },
@@ -1125,6 +1129,7 @@ impl AsyncComponent for AppModel {
             }
             AppMsg::Shortcut(key, modifier) => {
                 let entry = self.current_entry();
+                let key = key.to_lower();
 
                 if let Some(entry) = entry {
                     for (action, a_key, a_modifier) in &entry.actions {
@@ -1191,28 +1196,25 @@ impl AsyncComponent for AppModel {
                 sender.input(AppMsg::ScrollToStart);
 
                 let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
-                let style = base_dirs.place_config_file("style.css").unwrap();
-
-                let display = gdk::Display::default().expect("Could not connect to a display.");
-                let provider = gtk::CssProvider::new();
-                provider.load_from_path(style);
-
-                gtk::style_context_remove_provider_for_display(&display, &self.css_provider);
-                gtk::style_context_add_provider_for_display(
-                    &display,
-                    &provider,
-                    gtk::STYLE_PROVIDER_PRIORITY_USER,
-                );
-
-                self.css_provider = provider;
 
                 let config = base_dirs.place_config_file("config.toml").unwrap();
-                let config = if std::fs::exists(&config).unwrap_or(false) {
+                let config: AppConfig = if std::fs::exists(&config).unwrap_or(false) {
                     let content = std::fs::read_to_string(&config).unwrap();
                     toml::from_str(&content).unwrap()
                 } else {
                     Default::default()
                 };
+
+                let style = include_str!("../style.scss");
+                let custom_style = base_dirs.place_config_file("style.scss").unwrap();
+                let custom_style = std::fs::read_to_string(custom_style).unwrap_or_default();
+                let style = format!(
+                    "$accent: {};\n{}\n{}",
+                    config.highlight_color, style, custom_style,
+                );
+                let style = grass::from_string(style, &Default::default()).unwrap_or_default();
+
+                self.css_provider.load_from_string(&style);
 
                 self.config = config;
             }
@@ -1343,7 +1345,15 @@ impl AsyncComponent for AppModel {
                 };
             }
             AppMsg::ActivateSelected => {
-                sender.input(AppMsg::Activate(self.selected_entry));
+                if let Some(action) = self.selected_action {
+                    let action = self.current_entry().map(|x| x.actions[action].clone());
+
+                    if let Some(action) = action {
+                        self.execute_action(&action.0, sender);
+                    }
+                } else {
+                    sender.input(AppMsg::Activate(self.selected_entry));
+                }
             }
             AppMsg::ClearPrefix => {
                 self.selected_plugin = None;
@@ -1462,36 +1472,33 @@ fn start() {
 
     let app = RelmApp::new("com.psyvern.jogger").with_args(Vec::new());
 
-    let display = gdk::Display::default().expect("Could not connect to a display.");
     let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
 
-    // The CSS "magic" happens here.
-    let provider = gtk::CssProvider::new();
-    provider.load_from_string(include_str!("../style.css"));
-    // We give the CssProvided to the default screen so the CSS rules we added
-    // can be applied to our window.
-    gtk::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_USER,
-    );
-
-    let style = base_dirs.place_config_file("style.css").unwrap();
-    let provider = gtk::CssProvider::new();
-    provider.load_from_path(style);
-    gtk::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_USER,
-    );
-
     let config = base_dirs.place_config_file("config.toml").unwrap();
-    let config = if std::fs::exists(&config).unwrap_or(false) {
+    let config: AppConfig = if std::fs::exists(&config).unwrap_or(false) {
         let content = std::fs::read_to_string(&config).unwrap();
         toml::from_str(&content).unwrap()
     } else {
         Default::default()
     };
+
+    let style = include_str!("../style.scss");
+    let custom_style = base_dirs.place_config_file("style.scss").unwrap();
+    let custom_style = std::fs::read_to_string(custom_style).unwrap_or_default();
+    let style = format!(
+        "$accent: {};\n{}\n{}",
+        config.highlight_color, style, custom_style,
+    );
+    let style = grass::from_string(style, &Default::default()).unwrap_or_default();
+
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(&style);
+    gtk::style_context_add_provider_for_display(
+        &gdk::Display::default().expect("Could not connect to a display."),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_USER,
+    );
+
     app.run_async::<AppModel>((config, plugins, provider));
     // app.run::<AppModel>(plugins);
 }

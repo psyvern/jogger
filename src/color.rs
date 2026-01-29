@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::{num::IntErrorKind, str::FromStr};
+use std::{fmt::Display, num::IntErrorKind, str::FromStr};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PangoColor {
@@ -11,6 +11,18 @@ pub struct PangoColor {
 impl From<PangoColor> for [u16; 3] {
     fn from(value: PangoColor) -> Self {
         [value.r, value.g, value.b]
+    }
+}
+
+impl Display for PangoColor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "#{:02X}{:02X}{:02X}",
+            self.r / 0x101,
+            self.g / 0x101,
+            self.b / 0x101
+        )
     }
 }
 

@@ -42,7 +42,7 @@ pub trait Plugin: Debug + Send + Sync {
 #[derive(Clone, Debug)]
 pub enum EntryAction {
     Close,
-    Copy(String),
+    Copy(String, Option<String>),
     HyprctlExec(String),
     Shell(String),
     Command {
@@ -58,7 +58,7 @@ pub enum EntryAction {
         working_directory: Option<PathBuf>,
     },
     Write(String),
-    Open(String, Option<String>, Option<PathBuf>),
+    Open(String, Option<String>, Option<PathBuf>, Option<String>),
     ChangePlugin(Option<usize>),
 }
 
@@ -66,10 +66,14 @@ impl EntryAction {
     pub fn description(&self) -> String {
         match self {
             EntryAction::Command { name, .. } => name.to_owned(),
-            EntryAction::Open(_, None, None) => "Run application".to_owned(),
-            EntryAction::Open(_, Some(name), None) => name.to_owned(),
-            EntryAction::Open(_, _, Some(_)) => "Open".to_owned(),
-            EntryAction::Copy(_) => "Copy".to_owned(),
+            EntryAction::Open(_, _, _, Some(s)) => s.to_owned(),
+            EntryAction::Open(_, None, None, _) => "Run application".to_owned(),
+            EntryAction::Open(_, Some(name), None, _) => name.to_owned(),
+            EntryAction::Open(_, _, Some(_), _) => "Open".to_owned(),
+            EntryAction::Copy(_, Some(s)) => s.to_owned(),
+            EntryAction::Copy(_, _) => "Copy".to_owned(),
+            EntryAction::LaunchTerminal { .. } => "Open terminal".to_owned(),
+            EntryAction::Write(_) => "Navigate".to_owned(),
             _ => "Run".to_owned(),
         }
     }
@@ -81,14 +85,16 @@ impl EntryAction {
                 .map(|x| x.to_owned())
                 .unwrap_or("image-missing".to_owned()),
             EntryAction::Close => "message-close".to_owned(),
-            EntryAction::Copy(_) => "edit-copy".to_owned(),
-            EntryAction::Open(app, _, _) => context
+            EntryAction::Copy(_, _) => "edit-copy".to_owned(),
+            EntryAction::Open(app, _, _, _) => context
                 .apps
                 .app_map
                 .get(app)
                 .and_then(|x| x.icon.as_ref())
                 .map(|x| x.to_owned())
                 .unwrap_or("image-missing".to_owned()),
+            EntryAction::LaunchTerminal { .. } => "terminal".to_owned(),
+            EntryAction::Write(_) => "go-parent-folder".to_owned(),
             _ => "image-missing".to_owned(),
         }
     }

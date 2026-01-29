@@ -60,6 +60,7 @@ impl Files {
                                             app_database.file_browser.clone().unwrap(),
                                             None,
                                             Some(parent.to_owned()),
+                                            Some("Open in folder".into()),
                                         ),
                                         Key::Return,
                                         ModifierType::CONTROL_MASK,
@@ -192,6 +193,7 @@ impl Files {
                             database.file_browser.clone().unwrap(),
                             None,
                             Some(path.clone()),
+                            None,
                         ),
                         Key::Return,
                         ModifierType::SHIFT_MASK,
@@ -208,12 +210,13 @@ impl Files {
                 ]
             } else if let Some(app) = app {
                 vec![
-                    EntryAction::Open(app.id.clone(), None, Some(path.clone())).into(),
+                    EntryAction::Open(app.id.clone(), None, Some(path.clone()), None).into(),
                     (
                         EntryAction::Open(
                             database.file_browser.clone().unwrap(),
                             None,
                             Some(path.clone()),
+                            Some("Open in folder".into()),
                         ),
                         Key::Return,
                         ModifierType::SHIFT_MASK,
