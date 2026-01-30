@@ -522,6 +522,24 @@ impl XdgAppDatabase {
                 let program = emulator.program();
                 let mut command = Command::new(&program);
 
+                if let Some(title) = &emulator.terminal_args.title {
+                    if let Some(title) = title.strip_suffix('=') {
+                        command.arg(format!("{title}={}", app.name));
+                    } else {
+                        command.arg(title);
+                        command.arg(&app.name);
+                    }
+                }
+
+                if let Some(app_id) = &emulator.terminal_args.app_id {
+                    if let Some(app_id) = app_id.strip_suffix('=') {
+                        command.arg(format!("{app_id}={}.desktop", app.id));
+                    } else {
+                        command.arg(app_id);
+                        command.arg(format!("{}.desktop", app.id));
+                    }
+                }
+
                 command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
 
                 for part in exec {

@@ -18,7 +18,7 @@ use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 #[derive(Clone, Debug)]
 pub struct DesktopEntry {
     pub id: String,
-    name: String,
+    pub name: String,
     description: Option<String>,
     pub icon: Option<String>,
     file_path: PathBuf,

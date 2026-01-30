@@ -177,7 +177,12 @@ impl Plugin for Hyprland {
         let clients = clients
             .into_iter()
             .map(|x| {
-                let data = self.entries.get(&x.class.to_lowercase());
+                let class = x.class.to_lowercase();
+                let data = self.entries.get(&class).or_else(|| {
+                    class
+                        .strip_suffix(".desktop")
+                        .and_then(|x| self.entries.get(x))
+                });
 
                 let name = data
                     .map(|(x, _)| x)
