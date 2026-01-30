@@ -554,7 +554,12 @@ impl XdgAppDatabase {
     }
 
     pub fn launch_action(&self, app: &DesktopEntry, action: &str, args: &[String]) -> bool {
-        let Some(exec) = app.actions.get(action).and_then(|x| x.exec.as_ref()) else {
+        let Some(exec) = app
+            .actions
+            .iter()
+            .find(|x| x.id == action)
+            .and_then(|x| x.exec.as_ref())
+        else {
             println!("No action called {action}");
             return false;
         };
