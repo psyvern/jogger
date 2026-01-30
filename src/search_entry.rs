@@ -97,13 +97,18 @@ impl Component for SearchEntryModel {
                             }
                         }
                         Key::b => {
-                            if modifier.contains(ModifierType::CONTROL_MASK) {
+                            if modifier == ModifierType::CONTROL_MASK {
                                 sender.output(SearchEntryMsg::ToggleActions).unwrap();
                                 return Propagation::Stop;
                             }
                         }
+                        Key::c => {
+                            if modifier == ModifierType::CONTROL_MASK && root.selection_bounds().is_none() {
+                                return Propagation::Stop;
+                            }
+                        }
                         Key::r => {
-                            if modifier.contains(ModifierType::CONTROL_MASK) {
+                            if modifier == ModifierType::CONTROL_MASK {
                                 sender.output(SearchEntryMsg::Reload).unwrap();
                                 return Propagation::Stop;
                             }
@@ -125,6 +130,11 @@ impl Component for SearchEntryModel {
                         }
                         Key::Escape => {
                             sender.output(SearchEntryMsg::Close).unwrap();
+                        }
+                        Key::c => {
+                            if modifier == ModifierType::CONTROL_MASK && root.selection_bounds().is_none() {
+                                sender.output(SearchEntryMsg::Shortcut(key, modifier)).unwrap();
+                            }
                         }
                         _ => {
                             if modifier != ModifierType::NO_MODIFIER_MASK {

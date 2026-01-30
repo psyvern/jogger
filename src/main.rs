@@ -396,6 +396,7 @@ enum AppMsg {
     Search(String),
     Activate(usize),
     ActivateSelected,
+    ActivateSelectedWithAction(usize),
     Shortcut(Key, ModifierType),
     ClearPrefix,
     Move(MoveDirection),
@@ -644,6 +645,7 @@ fn create_actions_box(
     actions: &[(EntryAction, gtk::gdk::Key, ModifierType)],
     index: usize,
     context: &Context,
+    sender: &AsyncComponentSender<AppModel>,
 ) -> GBox {
     let result = GBox::new(Orientation::Vertical, 0);
     result.add_css_class("actions_box");
@@ -697,7 +699,18 @@ fn create_actions_box(
             action_box.append(&label);
         }
 
-        result.append(&action_box);
+        let button = Button::new();
+        button.set_can_focus(false);
+        button.set_cursor_from_name(Some("pointer"));
+        button.set_child(Some(&action_box));
+        {
+            let sender = sender.clone();
+            button.connect_clicked(move |_| {
+                sender.input(AppMsg::ActivateSelectedWithAction(i));
+            });
+        }
+
+        result.append(&button);
     }
 
     result
@@ -796,6 +809,7 @@ impl AsyncComponent for AppModel {
                             model.current_entry().map_or(&[], |x| &x.actions),
                             model.selected_action.unwrap_or(0),
                             &model.context.read(),
+                            &sender,
                         )),
                     },
                 },
@@ -834,7 +848,16 @@ impl AsyncComponent for AppModel {
                             #[watch]
                             set_end_widget: model.current_entry()
                                 .and_then(|x| x.actions.first())
-                                .map(|x| widget_for_keybind(&x.0.description(), x.1, x.2))
+                                .map(|x| {
+                                    let sender = sender.clone();
+                                    let selected_entry = model.selected_entry;
+
+                                    let button = widget_for_keybind(&x.0.description(), x.1, x.2);
+                                    button.connect_clicked(move |_| {
+                                        sender.input(AppMsg::Activate(selected_entry))
+                                    });
+                                    button
+                                })
                                 .as_ref(),
                         },
 
@@ -846,6 +869,8 @@ impl AsyncComponent for AppModel {
                         append = &widget_for_keybind("Actions", Key::b, ModifierType::CONTROL_MASK) -> Button {
                             #[watch]
                             set_class_active: ("selected", model.selected_action.is_some()),
+                            #[watch]
+                            set_sensitive: model.current_entry().filter(|x| x.actions.len() > 1).is_some(),
 
                             connect_clicked[sender] => move |_| {
                                 sender.input(AppMsg::ToggleActions);
@@ -1023,6 +1048,7 @@ impl AsyncComponent for AppModel {
                 self.grid_entries.send(0, GridEntryMsg::Select);
 
                 self.selected_entry = 0;
+                self.selected_action = None;
                 self.query = query;
 
                 if self.selected_plugin.is_none() && !self.query.is_empty() {
@@ -1346,13 +1372,16 @@ impl AsyncComponent for AppModel {
             }
             AppMsg::ActivateSelected => {
                 if let Some(action) = self.selected_action {
-                    let action = self.current_entry().map(|x| x.actions[action].clone());
-
-                    if let Some(action) = action {
-                        self.execute_action(&action.0, sender);
-                    }
+                    sender.input(AppMsg::ActivateSelectedWithAction(action));
                 } else {
                     sender.input(AppMsg::Activate(self.selected_entry));
+                }
+            }
+            AppMsg::ActivateSelectedWithAction(action) => {
+                let action = self.current_entry().map(|x| x.actions[action].clone());
+
+                if let Some(action) = action {
+                    self.execute_action(&action.0, sender);
                 }
             }
             AppMsg::ClearPrefix => {
