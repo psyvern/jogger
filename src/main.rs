@@ -774,22 +774,27 @@ impl AsyncComponent for AppModel {
                 },
 
                 Overlay {
+                    set_can_focus: false,
+
                     if model.use_grid() {
                         &GBox {
                             #[local_ref]
                             entries_grid -> Grid {
+                                #[watch]
+                                set_sensitive: model.selected_action.is_none(),
+
                                 set_row_homogeneous: true,
                                 set_column_homogeneous: true,
                                 set_hexpand: true,
                                 set_vexpand: true,
-                                set_can_focus: false,
                             },
                         }
                     } else {
                         scrolled_window = &ScrolledWindow {
                             #[local_ref]
                             entries -> ListBox {
-                                set_can_focus: false,
+                                #[watch]
+                                set_sensitive: model.selected_action.is_none(),
 
                                 connect_row_activated[sender] => move |_, row| {
                                     sender.input(AppMsg::Activate(row.index() as usize));
@@ -1197,9 +1202,13 @@ impl AsyncComponent for AppModel {
                 AppMsg::Show
             }),
             AppMsg::ToggleActions => {
-                self.selected_action = match self.selected_action {
-                    Some(_) => None,
-                    None => Some(0),
+                if let Some(entry) = self.current_entry() {
+                    if entry.actions.len() > 1 {
+                        self.selected_action = match self.selected_action {
+                            Some(_) => None,
+                            None => Some(0),
+                        }
+                    }
                 }
             }
             AppMsg::Reload => {

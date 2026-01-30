@@ -19,10 +19,6 @@ $errorContainer: #93000a;
     border-color: unset;
 }
 
-button:disabled {
-    opacity: 0.5;
-}
-
 placeholder {
     opacity: 0.5;
 }
@@ -68,6 +64,10 @@ grid {
         .icon {
             -gtk-icon-shadow: 0 0 10px $surface;
         }
+
+        &:disabled:not(.selected) {
+            opacity: 0.5;
+        }
     }
 }
 
@@ -100,6 +100,10 @@ row {
 
     .small_icon {
         -gtk-icon-shadow: 0px 0px 5px $surface;
+    }
+
+    &:disabled:not(.selected) {
+        opacity: 0.5;
     }
 }
 
@@ -189,6 +193,10 @@ entry {
     .description {
         margin-right: 4px;
         color: inherit;
+    }
+
+    &:disabled {
+        opacity: 0.5;
     }
 }
 
