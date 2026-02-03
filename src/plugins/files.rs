@@ -124,7 +124,7 @@ impl Files {
         let mime = database.guess(&path).mime;
 
         let is_dir = metadata.is_dir() || mime.as_str() == "inode/directory";
-        let app = database.default_for_mime(mime);
+        let mut apps = database.find_associations(mime).into_iter();
         let icon = database.mime_db.lookup_icon_name(mime);
         let desc = database
             .mime_db
@@ -208,31 +208,62 @@ impl Files {
                         ModifierType::CONTROL_MASK,
                     ),
                 ]
-            } else if let Some(app) = app {
-                vec![
-                    EntryAction::Open(app.id.clone(), None, Some(path.clone()), None).into(),
-                    (
+            } else {
+                let mut vec = Vec::new();
+                if let Some(app) = apps.next() {
+                    vec.push(
+                        EntryAction::Open(app.id.clone(), None, Some(path.clone()), None).into(),
+                    );
+                }
+
+                if let Some(file_browser) = &database.file_browser {
+                    vec.push((
                         EntryAction::Open(
-                            database.file_browser.clone().unwrap(),
+                            file_browser.to_owned(),
                             None,
                             Some(path.clone()),
                             Some("Open in folder".into()),
                         ),
                         Key::Return,
                         ModifierType::SHIFT_MASK,
-                    ),
+                    ));
+                }
+
+                vec.push((
+                    EntryAction::LaunchTerminal {
+                        program: None,
+                        arguments: vec![],
+                        working_directory: path.parent().map(|x| x.to_owned()),
+                    },
+                    Key::t,
+                    ModifierType::CONTROL_MASK,
+                ));
+
+                vec.extend(apps.map(|x| {
                     (
-                        EntryAction::LaunchTerminal {
-                            program: None,
-                            arguments: vec![],
-                            working_directory: path.parent().map(|x| x.to_owned()),
-                        },
-                        Key::t,
-                        ModifierType::CONTROL_MASK,
+                        EntryAction::Open(
+                            x.id.clone(),
+                            None,
+                            Some(path.clone()),
+                            Some(format!("Open with {}", x.name)),
+                        ),
+                        Key::Escape,
+                        ModifierType::NO_MODIFIER_MASK,
+                    )
+                }));
+
+                vec.push((
+                    EntryAction::Open(
+                        "".to_owned(),
+                        None,
+                        Some(path.clone()),
+                        Some("Open with...".to_owned()),
                     ),
-                ]
-            } else {
-                vec![]
+                    Key::Escape,
+                    ModifierType::NO_MODIFIER_MASK,
+                ));
+
+                vec
             },
             id: "".to_owned(),
             drag_file: Some(path),

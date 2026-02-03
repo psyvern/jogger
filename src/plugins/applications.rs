@@ -34,6 +34,13 @@ pub struct DesktopEntry {
     frequency: u32,
 }
 
+impl PartialEq for DesktopEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+impl Eq for DesktopEntry {}
+
 #[derive(Clone, Debug)]
 pub struct TerminalArgs {
     pub exec: Option<String>,

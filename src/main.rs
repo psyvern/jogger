@@ -97,6 +97,7 @@ impl FactoryComponent for GridEntryComponent {
             #[watch]
             set_class_active: ("selected", self.selected),
             set_cursor_from_name: Some("pointer"),
+            // set_tooltip: &self.entry.name.text,
 
             connect_clicked[sender, index] => move |_| {
                 sender.output(index.clone()).unwrap();
@@ -681,7 +682,7 @@ fn create_actions_box(
             }
         }
 
-        {
+        if *key != Key::Escape {
             let label = Label::new(Some(&match *key {
                 Key::Return => "keyboard_return".to_owned(),
                 _ => key

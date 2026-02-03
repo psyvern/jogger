@@ -7,6 +7,7 @@ use std::{
     process::Command,
 };
 
+use itertools::Itertools;
 use mediatype::MediaTypeBuf as Mime;
 use xdg::BaseDirectories;
 use xdg_mime::SharedMimeInfo;
@@ -458,7 +459,9 @@ impl XdgAppDatabase {
                 for id in list.default.get(mime.as_str()).unwrap_or(&empty_set) {
                     if let Some(app) = self.app_map.get(id) {
                         seen.insert(id);
-                        openers.push(app);
+                        if !openers.contains(&app) {
+                            openers.push(app);
+                        }
                         break;
                     }
                 }
@@ -471,7 +474,9 @@ impl XdgAppDatabase {
                     }
                     seen.insert(id);
                     if let Some(app) = self.app_map.get(id) {
-                        openers.push(app);
+                        if !openers.contains(&app) {
+                            openers.push(app);
+                        }
                     }
                 }
 
@@ -486,7 +491,9 @@ impl XdgAppDatabase {
                         }
                         if app.mime_types.contains(&mime.as_str().to_owned()) {
                             seen.insert(id);
-                            openers.push(app);
+                            if !openers.contains(&app) {
+                                openers.push(app);
+                            }
                         }
                     }
                 }
@@ -503,7 +510,7 @@ impl XdgAppDatabase {
         }
 
         println!(
-            "No default terminal emulator could be found, will fallback on the first terminal emulator we find. To learn how to set one for vicinae to use: https://docs.vicinae.com/default-terminal"
+            "No default terminal emulator could be found, will fallback on the first terminal emulator we find."
         );
 
         self.app_map.values().find(|x| x.is_terminal_emulator())
