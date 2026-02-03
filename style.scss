@@ -177,7 +177,8 @@ entry {
     font-size: 15px;
 
     padding: 0 4px;
-    background-color: $surfaceVariant;
+    background-color: $surfaceContainerHighest;
+    box-shadow: 0 0 6px black;
     border-radius: 4px;
 }
 
