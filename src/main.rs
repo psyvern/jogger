@@ -14,7 +14,7 @@ use gtk::gdk::{ContentProvider, Display, FileList, Key, ModifierType};
 use gtk::glib::translate::ToGlibPtr;
 use gtk::glib::value::ToValue;
 use gtk::prelude::NativeExt;
-use gtk::{CenterBox, CssProvider, DragSource, IconTheme, Orientation, Separator};
+use gtk::{CenterBox, CssProvider, DragSource, GestureClick, IconTheme, Orientation, Separator};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -801,6 +801,18 @@ impl AsyncComponent for AppModel {
                                 },
                             },
                         }
+                    },
+
+                    add_overlay = &GBox {
+                        set_expand: true,
+                        #[watch]
+                        set_visible: model.selected_action.is_some(),
+
+                        add_controller = GestureClick {
+                            connect_released[sender] => move |_, _, _, _| {
+                                sender.input(AppMsg::ToggleActions);
+                            },
+                        },
                     },
 
                     add_overlay = &Overlay {

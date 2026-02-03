@@ -1,13 +1,13 @@
-$surface: #111418;
-$surfaceDim: #111418;
-$surfaceBright: #37393e;
-$surfaceContainerLowest: #0b0e13;
-$surfaceContainerLow: #191c20;
-$surfaceContainer: #1d2024;
-$surfaceContainerHigh: #272a2f;
-$surfaceContainerHighest: #32353a;
-$surfaceVariant: #43474e;
-$outline: #8d9199;
+$surface: #141318;
+$surfaceDim: #141318;
+$surfaceBright: #3a383e;
+$surfaceContainerLowest: #0f0d13;
+$surfaceContainerLow: #1c1b20;
+$surfaceContainer: #201f24;
+$surfaceContainerHigh: #2b292f;
+$surfaceContainerHighest: #36343a;
+$surfaceVariant: #48454e;
+$outline: #938f99;
 
 $error: #ffb4ab;
 $onError: #690005;
@@ -25,8 +25,8 @@ placeholder {
 
 window {
     border-radius: 16px;
-    border: 2px solid #FFFFFFAF;
-    background-color: transparentize($surface, 0.05);
+    border: 2px solid $outline;
+    background-color: transparentize($surface, 0.03);
     transition: opacity 0.2s;
 }
 

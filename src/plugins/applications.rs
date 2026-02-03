@@ -271,31 +271,34 @@ impl DesktopEntry {
                 ModifierType::CONTROL_MASK | ModifierType::SHIFT_MASK,
             ),
         ];
-        vec.extend(self.actions.iter().enumerate().flat_map(|(i, action)| {
-            let key = match i {
-                0 => Key::_1,
-                1 => Key::_2,
-                2 => Key::_3,
-                3 => Key::_4,
-                4 => Key::_5,
-                5 => Key::_6,
-                6 => Key::_7,
-                7 => Key::_8,
-                8 => Key::_9,
-                9 => Key::_0,
-                _ => return None,
-            };
-            Some((
-                EntryAction::Open(
-                    self.id.clone(),
-                    Some(action.id.clone()),
-                    None,
-                    Some(action.name.clone()),
-                ),
-                key,
-                ModifierType::CONTROL_MASK,
-            ))
-        }));
+        vec.extend(
+            self.actions
+                .iter()
+                .zip([
+                    Key::_1,
+                    Key::_2,
+                    Key::_3,
+                    Key::_4,
+                    Key::_5,
+                    Key::_6,
+                    Key::_7,
+                    Key::_8,
+                    Key::_9,
+                    Key::_0,
+                ])
+                .map(|(action, key)| {
+                    (
+                        EntryAction::Open(
+                            self.id.clone(),
+                            Some(action.id.clone()),
+                            None,
+                            Some(action.name.clone()),
+                        ),
+                        key,
+                        ModifierType::CONTROL_MASK,
+                    )
+                }),
+        );
         vec
     }
 
