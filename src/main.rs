@@ -1061,9 +1061,11 @@ impl AsyncComponent for AppModel {
     ) {
         match message {
             AppMsg::Search(query) => {
-                self.grid_entries
-                    .send(self.selected_entry, GridEntryMsg::Unselect);
-                self.grid_entries.send(0, GridEntryMsg::Select);
+                if self.use_grid() {
+                    self.grid_entries
+                        .send(self.selected_entry, GridEntryMsg::Unselect);
+                    self.grid_entries.send(0, GridEntryMsg::Select);
+                }
 
                 self.selected_entry = 0;
                 self.selected_action = None;

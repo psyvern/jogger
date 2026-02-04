@@ -1,10 +1,10 @@
-use std::{fmt::Debug, fs::DirEntry, os::unix::fs::MetadataExt, path::Path};
+use std::{fmt::Debug, fs::DirEntry, ops::Range, os::unix::fs::MetadataExt, path::Path};
 
 use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
 
 use crate::{
-    interface::{Context, Entry, EntryAction, EntryIcon, FormattedString},
+    interface::{Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString},
     xdg_database::XdgAppDatabase,
 };
 
@@ -83,7 +83,8 @@ impl Files {
                         .chain(
                             std::fs::read_dir(&path)?
                                 .flatten()
-                                .flat_map(move |x| self.file_to_entry(app_database, x))
+                                .flat_map(|x| self.file_to_entry(app_database, x, None))
+                                .take(255)
                                 .sorted_by_cached_key(|x| x.name.clone()),
                         ),
                 ));
@@ -103,19 +104,27 @@ impl Files {
             return Ok(Box::new(
                 std::fs::read_dir(path)?
                     .flatten()
-                    .filter(move |x| {
+                    .filter_map(move |x| {
                         let name = x.file_name();
                         let name = name.to_string_lossy();
-                        name.to_lowercase().contains(&file_query)
+                        name.to_lowercase()
+                            .find(&file_query)
+                            .map(|pos| (x, pos..pos + file_query.len()))
                     })
-                    .flat_map(|x| self.file_to_entry(app_database, x)),
+                    .flat_map(|(x, range)| self.file_to_entry(app_database, x, Some(range)))
+                    .take(255),
             ));
         }
 
         Ok(Box::new(std::iter::empty()))
     }
 
-    fn file_to_entry(&self, database: &XdgAppDatabase, entry: DirEntry) -> Option<Entry> {
+    fn file_to_entry(
+        &self,
+        database: &XdgAppDatabase,
+        entry: DirEntry,
+        range: Option<Range<usize>>,
+    ) -> Option<Entry> {
         let path = entry.path();
 
         let metadata = entry.metadata().ok()?;
@@ -180,7 +189,13 @@ impl Files {
         };
 
         Some(Entry {
-            name: FormattedString::plain(name),
+            name: match range {
+                None => FormattedString::plain(name),
+                Some(range) => FormattedString {
+                    text: name.to_string(),
+                    ranges: vec![(FormatStyle::Highlight, range)],
+                },
+            },
             tag: Some(FormattedString::plain(size)),
             description: Some(FormattedString::plain(desc)),
             icon: EntryIcon::Name(icon.clone()),
