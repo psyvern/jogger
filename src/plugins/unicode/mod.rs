@@ -1,6 +1,5 @@
+use bstr::ByteSlice;
 mod char;
-
-use itertools::Itertools;
 
 use crate::plugins::unicode::char::Char;
 
@@ -8,7 +7,7 @@ use crate::interface::{
     Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString, Plugin,
 };
 
-include!(concat!(env!("OUT_DIR"), "/data.rs"));
+include!(concat!(env!("OUT_DIR"), "/unicode_data.rs"));
 
 #[derive(Debug)]
 pub struct Unicode {}
@@ -19,14 +18,14 @@ impl Unicode {
     }
 }
 
-fn titlecase(s: &str) -> String {
-    let mut last = ' ';
+pub fn titlecase(s: &[u8]) -> String {
+    let mut last = b' ';
     let mut result = String::new();
 
-    for c in s.chars() {
+    for &c in s {
         result.push(match last {
-            ' ' | '-' | '<' => c,
-            _ => c.to_ascii_lowercase(),
+            b' ' | b'-' | b'<' => c as char,
+            _ => (c as char).to_ascii_lowercase(),
         });
 
         last = c;
@@ -35,13 +34,10 @@ fn titlecase(s: &str) -> String {
     result
 }
 
-fn char_representation(c: char) -> char {
-    match c {
-        ' ' => '⎵',
-        '\0'..'\u{20}' => char::from_u32(c as u32 + 0x2400).unwrap_or(c),
-        c if c.is_whitespace() || c.is_control() => '�',
-        c => c,
-    }
+fn is_unicode_name(c: char) -> bool {
+    matches!(c,
+        ' ' | '(' | ')' | ',' | '-' | '0'..='9' | '<' | '>' | 'A'..='Z' | 'a'..='z'
+    )
 }
 
 impl Plugin for Unicode {
@@ -54,10 +50,13 @@ impl Plugin for Unicode {
     }
 
     fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
-        if query.chars().exactly_one().is_ok() {
-        } else if let Ok(codepoint) = u32::from_str_radix(query, 16) {
-            return DATA
-                .binary_search_by(|x| x.codepoint.cmp(&codepoint))
+        if query.is_empty() {
+            // TODO: add recents
+        } else if query.chars().count() == 1 {
+        } else if query.chars().all(is_unicode_name) {
+            let iter1 = u32::from_str_radix(query, 16)
+                .into_iter()
+                .flat_map(|codepoint| DATA.binary_search_by(|x| x.codepoint.cmp(&codepoint)))
                 .map(|x| &DATA[x])
                 .map(|x| Entry {
                     name: FormattedString::plain(titlecase(x.name)),
@@ -66,38 +65,54 @@ impl Plugin for Unicode {
                         format!("{:04X}", x.codepoint),
                         FormatStyle::Highlight,
                     )),
-                    icon: EntryIcon::Character(char_representation(x.scalar)),
-                    small_icon: EntryIcon::None,
-                    actions: vec![EntryAction::Copy(x.name.to_owned(), None).into()],
-                    id: "".to_owned(),
+                    icon: EntryIcon::Text(x.representation().to_string()),
+                    actions: vec![
+                        EntryAction::Copy(x.name.to_str_lossy().into_owned(), None).into(),
+                    ],
                     ..Default::default()
-                })
-                .into_iter()
-                .collect();
-        } else if query.chars().all(|c| {
-            matches!(c,
-                ' ' | '(' | ')' | ',' | '-' | '0'..='9' | '<' | '>' | 'A'..='Z' | 'a'..='z'
-            )
-        }) {
-            let query = query.to_uppercase();
-            return DATA
-                .iter()
-                .flat_map(|x| x.name.find(&query).map(|i| (i, x)))
-                .take(64)
-                .map(|(i, x)| Entry {
-                    name: FormattedString {
-                        text: titlecase(x.name),
-                        ranges: vec![(FormatStyle::Highlight, i..(i + query.len()))],
-                    },
-                    tag: Some(FormattedString::plain(x.category.to_string())),
-                    description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
-                    icon: EntryIcon::Character(char_representation(x.scalar)),
-                    small_icon: EntryIcon::None,
-                    actions: vec![EntryAction::Copy(x.scalar.to_string(), None).into()],
-                    id: "".to_owned(),
-                    ..Default::default()
-                })
-                .collect();
+                });
+
+            let query = Vec::from(query.to_uppercase());
+            let len = query.len();
+            let finder = bstr::Finder::new(&query);
+
+            let iter2 = DATA.iter().flat_map(|x| {
+                if let Some(i) = finder.find(x.name) {
+                    Some(Entry {
+                        name: FormattedString {
+                            text: titlecase(x.name),
+                            ranges: vec![(FormatStyle::Highlight, i..(i + len))],
+                        },
+                        tag: Some(FormattedString::plain(x.category.to_string())),
+                        description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
+                        icon: EntryIcon::Text(x.representation().to_string()),
+                        actions: vec![EntryAction::Copy(x.scalar.to_string(), None).into()],
+                        ..Default::default()
+                    })
+                } else if let Some((alias, i)) = x
+                    .aliases
+                    .iter()
+                    .take_while(|x| !x.is_empty())
+                    .flat_map(|x| finder.find(x).map(|i| (x, i)))
+                    .next()
+                {
+                    Some(Entry {
+                        name: FormattedString::plain(titlecase(x.name)),
+                        tag: Some(FormattedString {
+                            text: titlecase(alias),
+                            ranges: vec![(FormatStyle::Highlight, i..(i + len))],
+                        }),
+                        description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
+                        icon: EntryIcon::Text(x.representation().to_string()),
+                        actions: vec![EntryAction::Copy(x.scalar.to_string(), None).into()],
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                }
+            });
+
+            return iter1.chain(iter2).take(128).collect();
         }
 
         query
@@ -109,20 +124,16 @@ impl Plugin for Unicode {
                         name: FormattedString::plain(titlecase(x.name)),
                         tag: Some(FormattedString::plain(x.category.to_string())),
                         description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
-                        icon: EntryIcon::Character(char_representation(x.scalar)),
-                        small_icon: EntryIcon::None,
-                        actions: vec![EntryAction::Copy(x.name.to_owned(), None).into()],
-                        id: "".to_owned(),
+                        icon: EntryIcon::Text(x.representation().to_string()),
+                        actions: vec![
+                            EntryAction::Copy(x.name.to_str_lossy().into_owned(), None).into(),
+                        ],
                         ..Default::default()
                     })
                     .unwrap_or(Entry {
                         name: FormattedString::plain("<unknown>"),
-                        tag: Some(FormattedString::plain("??")),
                         description: Some(FormattedString::plain(format!("{:04X}", c as u32))),
-                        icon: EntryIcon::Character(c),
-                        small_icon: EntryIcon::None,
-                        actions: vec![],
-                        id: "".to_owned(),
+                        icon: EntryIcon::Text(c.to_string()),
                         ..Default::default()
                     })
             })

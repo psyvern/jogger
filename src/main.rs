@@ -127,10 +127,10 @@ impl FactoryComponent for GridEntryComponent {
                             add_css_class: "icon",
                         }
                     },
-                    EntryIcon::Character(value) => {
+                    EntryIcon::Text(value) => {
                         Label {
                             #[watch]
-                            set_label: &value.to_string(),
+                            set_label: &value,
                             add_css_class: "icon",
                         }
                     },
@@ -283,10 +283,10 @@ impl FactoryComponent for ListEntryComponent {
                                     add_css_class: "icon",
                                 }
                             },
-                            EntryIcon::Character(value) => {
+                            EntryIcon::Text(value) => {
                                 Label {
                                     #[watch]
-                                    set_label: &value.to_string(),
+                                    set_label: &value,
                                     add_css_class: "icon",
                                 }
                             },
@@ -1521,6 +1521,7 @@ fn start() {
         plugins::commands::Commands,
         plugins::ssh::Ssh,
         plugins::unicode::Unicode,
+        plugins::emoji::Emojis,
     ];
 
     let app = RelmApp::new("com.psyvern.jogger").with_args(Vec::new());

@@ -255,7 +255,7 @@ pub struct Entry {
 pub enum EntryIcon {
     Name(String),
     Path(PathBuf),
-    Character(char),
+    Text(String),
     #[default]
     None,
 }

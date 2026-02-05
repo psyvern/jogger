@@ -1,6 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Category {
     // Normative Categories
     LetterUppercase,
@@ -101,6 +101,20 @@ impl Display for Category {
 pub struct Char<'a> {
     pub scalar: char,
     pub codepoint: u32,
-    pub name: &'a str,
+    pub name: &'a [u8],
+    pub aliases: [&'a [u8]; 5],
     pub category: Category,
+}
+
+impl Char<'_> {
+    pub fn representation(&self) -> char {
+        let c = self.scalar;
+
+        match c {
+            ' ' => '⎵',
+            '\0'..'\u{20}' => char::from_u32(c as u32 + 0x2400).unwrap_or(c),
+            c if c.is_whitespace() || c.is_control() => '�',
+            c => c,
+        }
+    }
 }

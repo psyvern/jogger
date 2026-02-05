@@ -2,9 +2,12 @@ use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::env;
+use std::fmt::Debug;
 use std::fs;
 use std::fs::File;
+use std::io::Write;
 use std::io::{BufRead, BufReader, Result};
+use std::num::Wrapping;
 use std::path::Path;
 
 use itertools::Itertools;
@@ -13,11 +16,20 @@ use itertools::Itertools;
 include!("src/plugins/unicode/char.rs");
 
 fn main() -> Result<()> {
+    println!("cargo:rerun-if-changed=data/unicode/UnicodeData.txt");
+    println!("cargo:rerun-if-changed=data/unicode/NameAliases.txt");
+    println!("cargo:rerun-if-changed=data/unicode/emoji-sequences.txt");
+    println!("cargo:rerun-if-changed=data/unicode/emoji-test.txt");
+    println!("cargo:rerun-if-changed=data/unicode/glyphnames.json");
+
+    println!("cargo:rerun-if-changed=build.rs");
+
     #[derive(Debug)]
     struct Char {
         scalar: char,
         codepoint: u32,
         name: String,
+        aliases: [String; 5],
         category: Category,
     }
 
@@ -47,74 +59,89 @@ fn main() -> Result<()> {
         }
     }
 
-    let mut vector: Vec<Char> = Vec::new();
-    let data_path = env::var_os("DATA_PATH").unwrap_or_else(|| "UnicodeData.txt".into());
+    impl Display for Char {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                r#"Char {{ scalar: {:?}, codepoint: {}, name: b"{}", aliases: [{}], category: Category::{} }}"#,
+                self.scalar,
+                self.codepoint,
+                self.name,
+                self.aliases.iter().map(|x| format!("b\"{x}\"")).join(", "),
+                self.category
+            )
+        }
+    }
 
-    let data_file = File::open(data_path)?;
+    let mut aliases_map = HashMap::<u32, Vec<String>>::new();
+
+    let file = File::open("data/unicode/NameAliases.txt").unwrap();
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let mut parts = line.split(';');
+        let codepoint =
+            u32::from_str_radix(parts.next().expect("NameAliases.txt is malformed"), 16)
+                .expect("NameAliases.txt is malformed");
+        let alias = parts.next().expect("NameAliases.txt is malformed");
+
+        aliases_map
+            .entry(codepoint)
+            .or_default()
+            .push(alias.to_owned());
+    }
+
+    let mut vector: Vec<Char> = Vec::new();
+    let data_file = File::open("data/unicode/UnicodeData.txt")?;
     for line_result in BufReader::new(data_file).lines() {
         let line = line_result?;
         let line = Box::leak(line.into_boxed_str());
-        let mut csv_iter = line.split(';');
-        let codepoint = u32::from_str_radix(csv_iter.next().expect("data is corrupt"), 16)
+        let mut parts = line.split(';');
+        let codepoint = u32::from_str_radix(parts.next().expect("data is corrupt"), 16)
             .expect("data is corrupt");
 
-        const CONTROL_VALUE: &str = "<control>";
-        let name = csv_iter.next().expect("data is corrupt");
-
-        let category = csv_iter.next().expect("data is corrupt");
-        let category = category.parse().expect("Unrecognised category");
-
-        let name = {
-            let mut name_in_file = name;
-            if name == CONTROL_VALUE {
-                let mut i = 0;
-                while i < 7 {
-                    csv_iter.next();
-                    i += 1;
-                }
-                name_in_file = csv_iter.next().expect("data is corrupt");
-            }
-            if name_in_file.is_empty() {
-                if codepoint == 0x80 {
-                    "PADDING CHARACTER"
-                } else if codepoint == 0x81 {
-                    "HIGH OCTET PRESET"
-                } else if codepoint == 0x84 {
-                    "INDEX"
-                } else if codepoint == 0x99 {
-                    "SINGLE GRAPHIC CHARACTER INTRODUCER"
-                } else {
-                    CONTROL_VALUE
-                }
-            } else {
-                name_in_file
-            }
+        let Some(scalar) = char::from_u32(codepoint) else {
+            continue;
         };
 
-        if let Some(scalar) = char::from_u32(codepoint) {
-            vector.push(Char {
-                scalar,
-                codepoint,
-                name: name.to_owned(),
-                category,
-            });
+        let name = parts.next().expect("data is corrupt");
+
+        let category = parts.next().expect("data is corrupt");
+        let category = category.parse().expect("Unrecognised category");
+
+        let mut aliases = Vec::new();
+        if category != Category::OtherControl {
+            aliases.push(name.to_owned());
         }
+
+        if let Some(mut other) = aliases_map.remove(&codepoint) {
+            aliases.append(&mut other);
+        }
+
+        let mut aliases = aliases.into_iter();
+
+        vector.push(Char {
+            scalar,
+            codepoint,
+            name: aliases.next().unwrap(),
+            aliases: aliases
+                .chain(std::iter::repeat(String::new()))
+                .next_array()
+                .unwrap(),
+            category,
+        });
     }
 
     #[derive(serde::Deserialize)]
     struct NerdIconInfo<'a> {
-        char: &'a str,
+        // char: &'a str,
         code: &'a str,
     }
 
     #[derive(serde::Deserialize)]
-    struct NerdFontMetadata {
-        website: String,
-        #[serde(rename = "development-website")]
-        development_website: String,
-        version: String,
-        date: String,
-    }
+    struct NerdFontMetadata {}
 
     #[derive(serde::Deserialize)]
     struct NerdFontData<'a> {
@@ -124,19 +151,10 @@ fn main() -> Result<()> {
         icons: HashMap<&'a str, NerdIconInfo<'a>>,
     }
 
-    let data_path = env::var_os("GLYPH_PATH").unwrap_or_else(|| "glyphnames.json".into());
-    let nerd_font_data = std::fs::read_to_string(data_path).expect("Couldn't read file");
+    let nerd_font_data =
+        std::fs::read_to_string("data/unicode/glyphnames.json").expect("Couldn't read file");
     let nerd_font_data: NerdFontData =
         serde_json::from_str(&nerd_font_data).expect("JSON was not well-formatted");
-
-    for x in nerd_font_data
-        .icons
-        .keys()
-        .map(|x| x.split_once('-').map(|x| x.0))
-        .collect::<std::collections::HashSet<_>>()
-    {
-        println!("{x:?}",);
-    }
 
     for (name, data) in nerd_font_data.icons {
         if let Ok(code) = u32::from_str_radix(data.code, 16) {
@@ -145,6 +163,7 @@ fn main() -> Result<()> {
                     scalar: char::from_u32(code).unwrap(),
                     codepoint: code,
                     name: name.to_uppercase().replace('_', " "),
+                    aliases: Default::default(),
                     category: match category {
                         "cod" => Category::Codicons,
                         "custom" => Category::NfCustom,
@@ -172,26 +191,201 @@ fn main() -> Result<()> {
         set.insert(c);
     }
 
-    let data = format!(
-        "
-        use crate::plugins::unicode::char::Category;
-        static DATA: [Char; {}] = [{}];
-        ",
-        set.len(),
-        set.into_iter()
-            .map(|x| {
-                format!(
-                    "Char {{ scalar: {:?}, codepoint: {}, name: {:?}, category: Category::{} }}",
-                    x.scalar, x.codepoint, x.name, x.category
-                )
-            })
-            .join(", "),
-    );
-
     let out_dir = env::var_os("OUT_DIR").expect("OUT_DIR variable not specified");
-    let dest_path = Path::new(&out_dir).join("data.rs");
-    fs::write(&dest_path, data)?;
-    println!("cargo:rerun-if-changed=build.rs");
+    let dest_path = Path::new(&out_dir).join("unicode_data.rs");
+
+    fs::write(
+        &dest_path,
+        format!(
+            "use crate::plugins::unicode::char::Category;\nstatic DATA: [Char; {}] = [{}];",
+            set.len(),
+            set.into_iter().map(|x| x.to_string()).join(", "),
+        ),
+    )?;
+
+    parse_emojis();
 
     Ok(())
+}
+
+#[derive(Debug)]
+struct UnicodeVersion {
+    major: u16,
+    minor: u16,
+}
+
+impl Display for UnicodeVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
+impl FromStr for UnicodeVersion {
+    type Err = bool;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let Some(s) = s.strip_prefix('E') else {
+            return Err(false);
+        };
+
+        let Some((major, minor)) = s.split_once('.') else {
+            return Err(false);
+        };
+
+        let Ok(major) = major.parse() else {
+            return Err(true);
+        };
+
+        let Ok(minor) = minor.parse() else {
+            return Err(true);
+        };
+
+        Ok(Self { major, minor })
+    }
+}
+
+struct EmojiVariant {
+    codepoints: Vec<u32>,
+    version: UnicodeVersion,
+    attributes: Vec<String>,
+}
+
+impl Debug for EmojiVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "EmojiVariant {{ codepoints: vec!{:?}, version: {:?}, attributes: vec!{:?} }}",
+            self.codepoints, self.version, self.attributes
+        )
+    }
+}
+
+#[derive(Default)]
+struct Emoji {
+    group: usize,
+    subgroup: usize,
+    description: String,
+    variants: Vec<EmojiVariant>,
+}
+
+impl Debug for Emoji {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Emoji {{ group: {:?}, subgroup: {:?}, description: {:?}, variants: vec!{:?} }}",
+            self.group, self.subgroup, self.description, self.variants
+        )
+    }
+}
+
+fn parse_emojis() {
+    let mut groups = Vec::new();
+    let mut subgroups = Vec::new();
+
+    let mut current_group_real = String::new();
+    let mut current_group = Wrapping(usize::MAX);
+    let mut current_subgroup = Wrapping(usize::MAX);
+
+    let mut emojis = Vec::new();
+
+    let mut current_emoji = Emoji::default();
+
+    let file = File::open("data/unicode/emoji-test.txt").unwrap();
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        if line.is_empty() {
+            continue;
+        }
+
+        if let Some(line) = line.strip_prefix('#') {
+            match line.split_once(": ") {
+                Some((" group", group)) => {
+                    if current_subgroup.0 != usize::MAX {
+                        groups.push((current_group_real, std::mem::take(&mut subgroups)));
+                        current_subgroup = Wrapping(usize::MAX);
+                    }
+
+                    current_group += 1;
+                    current_group_real = group.to_owned();
+                }
+                Some((" subgroup", subgroup)) => {
+                    subgroups.push(subgroup.to_owned());
+                    current_subgroup += 1;
+                }
+                _ => {}
+            }
+
+            continue;
+        }
+
+        let (codepoints, line) = line.split_once(';').unwrap();
+        let (qualification, line) = line.split_once("# ").unwrap();
+
+        if qualification.trim() != "fully-qualified" {
+            continue;
+        }
+
+        let codepoints = codepoints
+            .trim()
+            .split(' ')
+            .map(|x| u32::from_str_radix(x, 16))
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap();
+
+        let (_, line) = line.split_once(' ').unwrap();
+        let (version, line) = line.split_once(' ').unwrap();
+        let (description, attributes) = match line.split_once(": ") {
+            Some((a, b)) => (a, b.split(", ").map(str::to_owned).collect()),
+            None => (line, vec![]),
+        };
+
+        let variant = EmojiVariant {
+            codepoints,
+            version: version.parse().unwrap(),
+            attributes,
+        };
+
+        if current_emoji.description == description {
+            current_emoji.variants.push(variant);
+        } else {
+            if !current_emoji.description.is_empty() {
+                emojis.push(current_emoji);
+            }
+
+            current_emoji = Emoji {
+                group: current_group.0,
+                subgroup: current_subgroup.0,
+                description: description.to_owned(),
+                variants: vec![variant],
+            }
+        }
+    }
+
+    if !current_emoji.description.is_empty() {
+        emojis.push(current_emoji);
+    }
+
+    if current_subgroup.0 != usize::MAX {
+        groups.push((current_group_real, subgroups));
+    }
+
+    let out_dir = env::var_os("OUT_DIR").expect("OUT_DIR variable not specified");
+    let dest_path = Path::new(&out_dir).join("unicode_emojis.rs");
+
+    fs::write(
+        &dest_path,
+        format!(
+            "\
+use crate::plugins::emoji::types::*;
+
+pub const GROUPS: [&'static str; {}] = {:?};
+
+pub(crate) fn get_data() -> Vec<Emoji> {{
+    vec!{emojis:?}
+}}
+",
+            groups.len(),
+            groups.into_iter().map(|x| x.0).collect_vec()
+        ),
+    )
+    .unwrap();
 }

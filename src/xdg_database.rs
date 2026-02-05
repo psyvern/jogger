@@ -7,7 +7,6 @@ use std::{
     process::Command,
 };
 
-use itertools::Itertools;
 use mediatype::MediaTypeBuf as Mime;
 use xdg::BaseDirectories;
 use xdg_mime::SharedMimeInfo;
