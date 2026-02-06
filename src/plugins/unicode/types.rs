@@ -102,7 +102,7 @@ pub struct Char<'a> {
     pub scalar: char,
     pub codepoint: u32,
     pub name: &'a [u8],
-    pub aliases: [&'a [u8]; 5],
+    pub aliases: &'a [&'a [u8]],
     pub category: Category,
 }
 

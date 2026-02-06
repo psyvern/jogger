@@ -1,13 +1,11 @@
 use bstr::ByteSlice;
-mod char;
-
-use crate::plugins::unicode::char::Char;
+mod data;
+mod types;
 
 use crate::interface::{
     Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString, Plugin,
 };
-
-include!(concat!(env!("OUT_DIR"), "/unicode_data.rs"));
+use crate::plugins::unicode::data::DATA;
 
 #[derive(Debug)]
 pub struct Unicode {}

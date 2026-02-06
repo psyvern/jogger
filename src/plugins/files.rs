@@ -4,7 +4,7 @@ use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
 
 use crate::{
-    interface::{Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString},
+    interface::{Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString, Plugin},
     xdg_database::XdgAppDatabase,
 };
 
@@ -54,7 +54,12 @@ impl Files {
                                 icon: EntryIcon::Name("back".to_owned()),
                                 small_icon: EntryIcon::None,
                                 actions: vec![
-                                    EntryAction::Write(if x == "/" { x } else { x + "/" }).into(),
+                                    EntryAction::Write {
+                                        text: if x == "/" { x } else { x + "/" },
+                                        description: "Navigate".into(),
+                                        icon: "go-parent-folder".into(),
+                                    }
+                                    .into(),
                                     (
                                         EntryAction::Open(
                                             app_database.file_browser.clone().unwrap(),
@@ -202,7 +207,12 @@ impl Files {
             small_icon: EntryIcon::from(small_icon),
             actions: if is_dir {
                 vec![
-                    EntryAction::Write(reduce_tilde(&path, &self.home_dir) + "/").into(),
+                    EntryAction::Write {
+                        text: reduce_tilde(&path, &self.home_dir) + "/",
+                        description: "Navigate".into(),
+                        icon: "go-parent-folder".into(),
+                    }
+                    .into(),
                     (
                         EntryAction::Open(
                             database.file_browser.clone().unwrap(),
@@ -284,16 +294,6 @@ impl Files {
             drag_file: Some(path),
         })
     }
-}
-
-impl Files {
-    fn name(&self) -> &str {
-        "Files"
-    }
-
-    fn icon(&self) -> Option<&str> {
-        Some("system-file-manager")
-    }
 
     pub fn search<'a>(
         &'a self,
@@ -302,5 +302,19 @@ impl Files {
     ) -> Box<dyn Iterator<Item = Entry> + 'a> {
         self.search_inner(query, &context.apps)
             .unwrap_or(Box::new(std::iter::empty()))
+    }
+}
+
+impl Plugin for Files {
+    fn name(&self) -> &str {
+        "Files"
+    }
+
+    fn icon(&self) -> Option<&str> {
+        Some("system-file-manager")
+    }
+
+    fn search(&self, query: &str, context: &mut Context) -> Vec<Entry> {
+        self.search(query, context).collect()
     }
 }

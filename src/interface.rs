@@ -57,7 +57,11 @@ pub enum EntryAction {
         arguments: Vec<String>,
         working_directory: Option<PathBuf>,
     },
-    Write(String),
+    Write {
+        text: String,
+        description: String,
+        icon: String,
+    },
     Open(String, Option<String>, Option<PathBuf>, Option<String>),
     ChangePlugin(Option<usize>),
 }
@@ -73,7 +77,7 @@ impl EntryAction {
             EntryAction::Copy(_, Some(s)) => s.to_owned(),
             EntryAction::Copy(_, _) => "Copy".to_owned(),
             EntryAction::LaunchTerminal { .. } => "Open terminal".to_owned(),
-            EntryAction::Write(_) => "Navigate".to_owned(),
+            EntryAction::Write { description, .. } => description.to_owned(),
             _ => "Run".to_owned(),
         }
     }
@@ -94,7 +98,7 @@ impl EntryAction {
                 .map(|x| x.to_owned())
                 .unwrap_or("image-missing".to_owned()),
             EntryAction::LaunchTerminal { .. } => "terminal".to_owned(),
-            EntryAction::Write(_) => "go-parent-folder".to_owned(),
+            EntryAction::Write { icon, .. } => icon.to_owned(),
             _ => "image-missing".to_owned(),
         }
     }

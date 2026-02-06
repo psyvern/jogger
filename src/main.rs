@@ -468,8 +468,8 @@ impl AppModel {
     fn execute_action(&mut self, action: &EntryAction, sender: AsyncComponentSender<Self>) {
         match action {
             EntryAction::Close => sender.input(AppMsg::Hide),
-            EntryAction::Write(query) => {
-                self.search_entry.emit(query.clone());
+            EntryAction::Write { text, .. } => {
+                self.search_entry.emit(text.clone());
             }
             EntryAction::ChangePlugin(plugin) => {
                 self.selected_plugin = *plugin;

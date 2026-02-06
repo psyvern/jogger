@@ -38,9 +38,9 @@ impl FromStr for UnicodeVersion {
 
 #[derive(Debug)]
 pub struct EmojiVariant {
-    pub codepoints: Vec<u32>,
+    pub codepoints: &'static str,
     pub version: UnicodeVersion,
-    pub attributes: Vec<&'static str>,
+    pub attributes: &'static [&'static str],
 }
 
 #[derive(Debug, Default)]
@@ -48,5 +48,5 @@ pub struct Emoji {
     pub group: usize,
     pub subgroup: usize,
     pub description: &'static str,
-    pub variants: Vec<EmojiVariant>,
+    pub variants: &'static [EmojiVariant],
 }
