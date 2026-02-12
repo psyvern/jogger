@@ -13,7 +13,7 @@ use gtk::gdk::prelude::SurfaceExt;
 use gtk::gdk::{ContentProvider, Display, FileList, Key, ModifierType};
 use gtk::glib::translate::ToGlibPtr;
 use gtk::glib::value::ToValue;
-use gtk::prelude::NativeExt;
+use gtk::prelude::{GestureSingleExt, NativeExt};
 use gtk::{CenterBox, CssProvider, DragSource, GestureClick, IconTheme, Orientation, Separator};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
@@ -53,10 +53,50 @@ use crate::interface::{Context, EntryIcon, FormattedString};
 use crate::plugins::files::Files;
 use crate::utils::CommandExt;
 
-#[derive(Debug, Clone)]
-enum GridEntryMsg {
+trait FactoryVecDequeExt<T> {
+    type Input;
+
+    fn try_send(&self, index: usize, msg: Self::Input);
+}
+
+impl<C> FactoryVecDequeExt<C> for FactoryVecDeque<C>
+where
+    C: FactoryComponent<Index = DynamicIndex>,
+{
+    type Input = C::Input;
+
+    fn try_send(&self, index: usize, msg: Self::Input) {
+        if index < self.len() {
+            self.send(index, msg);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EntryMsg {
     Select,
     Unselect,
+}
+
+#[derive(Debug)]
+enum EntryOutput {
+    Activate(DynamicIndex),
+    ButtonDown(DynamicIndex, bool),
+    DragStart,
+    DragEnd,
+}
+
+impl From<EntryOutput> for AppMsg {
+    fn from(value: EntryOutput) -> Self {
+        match value {
+            EntryOutput::Activate(index) => AppMsg::Activate(index.current_index()),
+            EntryOutput::DragStart => AppMsg::SetDragging(true),
+            EntryOutput::DragEnd => AppMsg::SetDragging(false),
+            EntryOutput::ButtonDown(index, secondary) => {
+                AppMsg::SelectEntry(index.current_index(), secondary)
+            }
+        }
+    }
 }
 
 struct GridEntryComponent {
@@ -84,8 +124,8 @@ impl Position<GridPosition, DynamicIndex> for GridEntryComponent {
 #[relm4::factory]
 impl FactoryComponent for GridEntryComponent {
     type Init = (usize, Rc<Entry>, usize);
-    type Input = GridEntryMsg;
-    type Output = DynamicIndex;
+    type Input = EntryMsg;
+    type Output = EntryOutput;
     type CommandOutput = ();
     type ParentWidget = Grid;
 
@@ -100,7 +140,21 @@ impl FactoryComponent for GridEntryComponent {
             // set_tooltip: &self.entry.name.text,
 
             connect_clicked[sender, index] => move |_| {
-                sender.output(index.clone()).unwrap();
+                sender.output(EntryOutput::Activate(index.clone())).unwrap();
+            },
+
+            add_controller = GestureClick {
+                connect_pressed[sender, index] => move |_, _, _, _| {
+                    sender.output(EntryOutput::ButtonDown(index.clone(), false)).unwrap();
+                },
+            },
+
+            add_controller = GestureClick {
+                set_button: gdk::BUTTON_SECONDARY,
+
+                connect_pressed[sender, index] => move |_, _, _, _| {
+                    sender.output(EntryOutput::ButtonDown(index.clone(), true)).unwrap();
+                },
             },
 
             GBox {
@@ -160,8 +214,8 @@ impl FactoryComponent for GridEntryComponent {
 
     fn update(&mut self, message: Self::Input, _: FactorySender<Self>) {
         match message {
-            GridEntryMsg::Select => self.selected = true,
-            GridEntryMsg::Unselect => self.selected = false,
+            EntryMsg::Select => self.selected = true,
+            EntryMsg::Unselect => self.selected = false,
         }
     }
 }
@@ -171,12 +225,6 @@ struct ListEntryComponent {
     entry: Rc<Entry>,
     selected: bool,
     color: PangoColor,
-}
-
-#[derive(Debug)]
-enum EntryMsg {
-    Select,
-    Unselect,
 }
 
 fn create_drag_controller(
@@ -209,30 +257,23 @@ fn create_drag_controller(
 
         let sender_clone = sender.clone();
         drag_source.connect_drag_begin(move |_, _| {
-            sender_clone.output(ListEntryOutput::DragStart).unwrap();
+            sender_clone.output(EntryOutput::DragStart).unwrap();
         });
 
         let sender_clone = sender.clone();
         drag_source.connect_drag_end(move |_, _, _| {
-            sender_clone.output(ListEntryOutput::DragEnd).unwrap();
+            sender_clone.output(EntryOutput::DragEnd).unwrap();
         });
     }
 
     drag_source
 }
 
-#[derive(Debug)]
-enum ListEntryOutput {
-    Activate(DynamicIndex),
-    DragStart,
-    DragEnd,
-}
-
 #[relm4::factory]
 impl FactoryComponent for ListEntryComponent {
     type Init = (usize, Rc<Entry>, PangoColor);
     type Input = EntryMsg;
-    type Output = ListEntryOutput;
+    type Output = EntryOutput;
     type CommandOutput = ();
     type ParentWidget = ListBox;
 
@@ -244,7 +285,21 @@ impl FactoryComponent for ListEntryComponent {
             set_cursor_from_name: Some("pointer"),
 
             connect_activate[sender, index] => move |_| {
-                sender.output(ListEntryOutput::Activate(index.clone())).unwrap()
+                sender.output(EntryOutput::Activate(index.clone())).unwrap()
+            },
+
+            add_controller = GestureClick {
+                connect_pressed[sender, index] => move |_, _, _, _| {
+                    sender.output(EntryOutput::ButtonDown(index.clone(), false)).unwrap();
+                },
+            },
+
+            add_controller = GestureClick {
+                set_button: gdk::BUTTON_SECONDARY,
+
+                connect_pressed[sender, index] => move |_, _, _, _| {
+                    sender.output(EntryOutput::ButtonDown(index.clone(), true)).unwrap();
+                },
             },
 
             add_controller: create_drag_controller(
@@ -401,6 +456,7 @@ enum AppMsg {
     Shortcut(Key, ModifierType),
     ClearPrefix,
     Move(MoveDirection),
+    SelectEntry(usize, bool),
     ScrollToSelected,
     ScrollToStart,
     Escape,
@@ -907,17 +963,11 @@ impl AsyncComponent for AppModel {
     ) -> AsyncComponentParts<Self> {
         let list_entries = FactoryVecDeque::builder()
             .launch(gtk::ListBox::default())
-            .forward(sender.input_sender(), |index| match index {
-                ListEntryOutput::Activate(index) => AppMsg::Activate(index.current_index()),
-                ListEntryOutput::DragStart => AppMsg::SetDragging(true),
-                ListEntryOutput::DragEnd => AppMsg::SetDragging(false),
-            });
+            .forward(sender.input_sender(), EntryOutput::into);
 
         let grid_entries = FactoryVecDeque::<GridEntryComponent>::builder()
             .launch(Grid::default())
-            .forward(sender.input_sender(), |output| {
-                AppMsg::Activate(output.current_index())
-            });
+            .forward(sender.input_sender(), EntryOutput::into);
 
         let grid_size = 5;
 
@@ -1064,8 +1114,8 @@ impl AsyncComponent for AppModel {
             AppMsg::Search(query) => {
                 if self.use_grid() {
                     self.grid_entries
-                        .send(self.selected_entry, GridEntryMsg::Unselect);
-                    self.grid_entries.send(0, GridEntryMsg::Select);
+                        .try_send(self.selected_entry, EntryMsg::Unselect);
+                    self.grid_entries.try_send(0, EntryMsg::Select);
                 }
 
                 self.selected_entry = 0;
@@ -1203,7 +1253,7 @@ impl AsyncComponent for AppModel {
                     plugin.open();
                 }
 
-                self.grid_entries.send(0, GridEntryMsg::Select);
+                self.grid_entries.try_send(0, EntryMsg::Select);
             }
             AppMsg::Hide => {
                 self.visible = false;
@@ -1212,7 +1262,7 @@ impl AsyncComponent for AppModel {
                 self.thread_handle = None;
                 self.selected_plugin = None;
                 self.selected_entry = 0;
-                self.grid_entries.broadcast(GridEntryMsg::Unselect);
+                self.grid_entries.broadcast(EntryMsg::Unselect);
             }
             AppMsg::Toggle => sender.input(if self.visible {
                 AppMsg::Hide
@@ -1291,21 +1341,11 @@ impl AsyncComponent for AppModel {
                 }
 
                 let move_grid = |f: fn(i32, i32) -> i32| -> usize {
-                    self.grid_entries
-                        .send(self.selected_entry, GridEntryMsg::Unselect);
-                    let new = f(self.selected_entry as i32, self.grid_size as i32) as usize;
-                    self.grid_entries.send(new, GridEntryMsg::Select);
-                    new
+                    f(self.selected_entry as i32, self.grid_size as i32) as usize
                 };
                 let move_list = |f: fn(i32, i32) -> i32| -> usize {
                     let size = self.list_entries.len() as i32;
-
-                    self.list_entries
-                        .send(self.selected_entry, EntryMsg::Unselect);
-                    let new = f(self.selected_entry as i32, size) as usize;
-                    self.list_entries.send(new, EntryMsg::Select);
-                    sender.input(AppMsg::ScrollToSelected);
-                    new
+                    f(self.selected_entry as i32, size) as usize
                 };
                 let move_grid_back = || move_grid(|i, size| (i - 1).rem_euclid(size * size));
                 let move_grid_forward = || move_grid(|i, size| (i + 1).rem_euclid(size * size));
@@ -1328,7 +1368,7 @@ impl AsyncComponent for AppModel {
                 let move_list_back = || move_list(|i, size| (i - 1).rem_euclid(size));
                 let move_list_forward = || move_list(|i, size| (i + 1).rem_euclid(size));
 
-                self.selected_entry = match direction {
+                let new = match direction {
                     MoveDirection::Back => {
                         if use_grid {
                             move_grid_back()
@@ -1387,6 +1427,28 @@ impl AsyncComponent for AppModel {
                     }
                     _ => self.selected_entry,
                 };
+
+                if new != self.selected_entry {
+                    sender.input(AppMsg::SelectEntry(new, false));
+                }
+            }
+            AppMsg::SelectEntry(index, secondary) => {
+                if self.use_grid() {
+                    self.grid_entries
+                        .try_send(self.selected_entry, EntryMsg::Unselect);
+                    self.grid_entries.try_send(index, EntryMsg::Select);
+                } else {
+                    self.list_entries
+                        .try_send(self.selected_entry, EntryMsg::Unselect);
+                    self.list_entries.try_send(index, EntryMsg::Select);
+                    sender.input(AppMsg::ScrollToSelected);
+                }
+
+                self.selected_entry = index;
+
+                if secondary {
+                    sender.input(AppMsg::ToggleActions);
+                }
             }
             AppMsg::ActivateSelected => {
                 if let Some(action) = self.selected_action {
