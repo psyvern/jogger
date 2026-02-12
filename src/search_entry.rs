@@ -1,8 +1,8 @@
 use gtk::{
-    EventControllerKey, PropagationPhase,
-    gdk::{Key, ModifierType},
+    EventControllerKey, EventSequenceState, GestureClick, InputHints, PropagationPhase,
+    gdk::{self, Key, ModifierType},
     glib::Propagation,
-    prelude::{EditableExt, EntryExt, EventControllerExt, WidgetExt},
+    prelude::{EditableExt, EntryExt, EventControllerExt, GestureExt, GestureSingleExt, WidgetExt},
 };
 use relm4::{Component, ComponentParts, ComponentSender};
 
@@ -33,8 +33,20 @@ impl Component for SearchEntryModel {
         root = gtk::Entry {
             set_hexpand: true,
             set_placeholder_text: Some("Search..."),
+            set_input_hints: InputHints::NO_EMOJI,
 
-            connect_changed[sender] => move |entry| { sender.output(SearchEntryMsg::Change(entry.text().to_string())).unwrap() },
+            connect_changed[sender] => move |entry| {
+                sender.output(SearchEntryMsg::Change(entry.text().to_string())).unwrap()
+            },
+
+            add_controller = GestureClick {
+                set_button: gdk::BUTTON_SECONDARY,
+                set_propagation_phase: PropagationPhase::Capture,
+
+                connect_pressed => move |s, _, _, _| {
+                    s.set_state(EventSequenceState::Claimed);
+                },
+            },
 
             add_controller = EventControllerKey::new() {
                 set_propagation_phase: PropagationPhase::Capture,
