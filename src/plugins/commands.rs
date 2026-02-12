@@ -10,7 +10,7 @@ pub struct Commands {
 }
 
 impl Commands {
-    pub fn new(_: &mut Context) -> Self {
+    pub fn new(_: &Context) -> Self {
         Self {
             shell: env::var("SHELL").ok(),
         }
@@ -30,7 +30,7 @@ impl Plugin for Commands {
         Some(">")
     }
 
-    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, _: &Context) -> Vec<Entry> {
         vec![Entry {
             name: FormattedString::from_style(query.trim(), FormatStyle::Monospace),
             tag: None,

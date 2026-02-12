@@ -4,7 +4,7 @@ use crate::interface::{Context, Plugin};
 pub struct Clipboard {}
 
 impl Clipboard {
-    pub fn new(_: &mut Context) -> Self {
+    pub fn new(_: &Context) -> Self {
         Self {}
     }
 }

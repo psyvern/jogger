@@ -11,7 +11,7 @@ use crate::plugins::unicode::data::DATA;
 pub struct Unicode {}
 
 impl Unicode {
-    pub fn new(_: &mut Context) -> Self {
+    pub fn new(_: &Context) -> Self {
         Self {}
     }
 }
@@ -47,7 +47,7 @@ impl Plugin for Unicode {
         Some("accessories-character-map")
     }
 
-    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, _: &Context) -> Vec<Entry> {
         if query.is_empty() {
             // TODO: add recents
         } else if query.chars().count() == 1 {

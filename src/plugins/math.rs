@@ -12,7 +12,7 @@ pub struct Math {
 }
 
 impl Math {
-    pub fn new(_: &mut Context) -> Self {
+    pub fn new(_: &Context) -> Self {
         let context = fend_core::Context::new();
         Self { context }
     }
@@ -35,7 +35,7 @@ impl Plugin for Math {
         Some("accessories-calculator")
     }
 
-    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, _: &Context) -> Vec<Entry> {
         let val = fend_core::evaluate_preview_with_interrupt(
             query,
             &mut self.context.clone(),

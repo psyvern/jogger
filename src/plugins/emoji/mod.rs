@@ -18,7 +18,7 @@ use crate::interface::{
 pub struct Emojis {}
 
 impl Emojis {
-    pub fn new(_: &mut Context) -> Self {
+    pub fn new(_: &Context) -> Self {
         Self {}
     }
 }
@@ -48,7 +48,7 @@ impl Plugin for Emojis {
         Some("face-smile-big")
     }
 
-    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, _: &Context) -> Vec<Entry> {
         if query.chars().next().is_some_and(|x| x >= '\x7F') {
             for emoji in EMOJIS {
                 if emoji.variants.iter().any(|x| x.codepoints == query) {

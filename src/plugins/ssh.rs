@@ -75,7 +75,7 @@ pub struct Ssh {
 }
 
 impl Ssh {
-    pub fn new(_: &mut Context) -> Self {
+    pub fn new(_: &Context) -> Self {
         #[allow(deprecated)]
         let home = std::env::home_dir().unwrap();
         let connections = inner(home.join(".ssh").join("config")).unwrap_or_default();
@@ -93,7 +93,7 @@ impl Plugin for Ssh {
         Some("network-wired")
     }
 
-    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, _: &Context) -> Vec<Entry> {
         let query = query.to_owned();
         self.connections
             .iter()

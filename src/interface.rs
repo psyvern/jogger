@@ -28,7 +28,7 @@ pub trait Plugin: Debug + Send + Sync {
     }
 
     #[allow(unused)]
-    fn search(&self, query: &str, context: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, context: &Context) -> Vec<Entry> {
         Vec::new()
     }
 

@@ -433,7 +433,7 @@ struct AppModel {
     query: String,
     thread_handle: Option<stoppable_thread::StoppableHandle<()>>,
     plugins: Arc<RwLock<Vec<Box<dyn Plugin>>>>,
-    plugins_fn: Vec<fn(&mut Context) -> Box<dyn Plugin>>,
+    plugins_fn: Vec<fn(&Context) -> Box<dyn Plugin>>,
     selected_plugin: Option<usize>,
     selected_entry: usize,
     list_entries: FactoryVecDeque<ListEntryComponent>,
@@ -446,6 +446,7 @@ struct AppModel {
     config: AppConfig,
     css_provider: CssProvider,
     selected_action: Option<usize>,
+    loading: bool,
 }
 
 impl AppModel {
@@ -723,11 +724,7 @@ impl AsyncComponent for AppModel {
     type Output = ();
     type CommandOutput = CommandMsg;
 
-    type Init = (
-        AppConfig,
-        Vec<fn(&mut Context) -> Box<dyn Plugin>>,
-        CssProvider,
-    );
+    type Init = (AppConfig, Vec<fn(&Context) -> Box<dyn Plugin>>, CssProvider);
 
     view! {
         Window {
@@ -772,6 +769,12 @@ impl AsyncComponent for AppModel {
                     },
 
                     append: model.search_entry.widget()
+                },
+
+                GBox {
+                    add_css_class: "loader",
+                    #[watch]
+                    set_class_active: ("loading", model.loading),
                 },
 
                 Overlay {
@@ -952,6 +955,7 @@ impl AsyncComponent for AppModel {
             config: init.0,
             css_provider: init.2,
             selected_action: None,
+            loading: false,
         };
 
         let entries = model.list_entries.widget();
@@ -998,9 +1002,9 @@ impl AsyncComponent for AppModel {
 
         let context = model.context.clone();
         tokio::spawn(async move {
-            let mut context = context.write();
+            let context = context.read();
             for plugin in init.1 {
-                sender.input(AppMsg::PluginLoaded(plugin(&mut context)));
+                sender.input(AppMsg::PluginLoaded(plugin(&context)));
             }
         });
 
@@ -1090,19 +1094,21 @@ impl AsyncComponent for AppModel {
                 }
 
                 if !self.query.is_empty() || self.selected_plugin.is_some() {
+                    self.loading = true;
+
                     let plugins = self.plugins.clone();
                     let selected_plugin = self.selected_plugin;
                     let query = self.query.clone();
                     let context = self.context.clone();
                     self.thread_handle = Some(stoppable_thread::spawn(move |stopped| {
-                        let mut context = context.write();
+                        let context = context.read();
                         let entries = {
                             let plugins = plugins.read();
                             match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
                                 None => {
                                     if query.starts_with(['~', '/']) {
-                                        Files::new(&mut context)
-                                            .search(&query, &mut context)
+                                        Files::new(&context)
+                                            .search(&query, &context)
                                             .map(|x| (999, x))
                                             .collect_vec()
                                     } else {
@@ -1142,7 +1148,7 @@ impl AsyncComponent for AppModel {
                                                     .filter(|x| !x.1.has_entry())
                                                     .filter(|(_, x)| x.prefix().is_none())
                                                     .flat_map(|(i, x)| {
-                                                        x.search(&query, &mut context)
+                                                        x.search(&query, &context)
                                                             .into_iter()
                                                             .map(move |x| (i, x))
                                                     }),
@@ -1151,7 +1157,7 @@ impl AsyncComponent for AppModel {
                                     }
                                 }
                                 Some((i, plugin)) => plugin
-                                    .search(&query, &mut context)
+                                    .search(&query, &context)
                                     .into_iter()
                                     .map(|x| (i, x))
                                     .collect_vec(),
@@ -1236,9 +1242,9 @@ impl AsyncComponent for AppModel {
                     let plugins = self.plugins_fn.clone();
                     let context = self.context.clone();
                     tokio::spawn(async move {
-                        let mut context = context.write();
+                        let context = context.read();
                         for plugin in plugins {
-                            sender.input(AppMsg::PluginLoaded(plugin(&mut context)));
+                            sender.input(AppMsg::PluginLoaded(plugin(&context)));
                         }
                     });
                 }
@@ -1421,6 +1427,8 @@ impl AsyncComponent for AppModel {
             }
             AppMsg::ScrollToStart => {}
             AppMsg::SearchResults(entries) => {
+                self.loading = false;
+
                 let mut list_entries = self.list_entries.guard();
                 list_entries.clear();
 
@@ -1439,7 +1447,7 @@ impl AsyncComponent for AppModel {
                         .enumerate()
                         .filter(|(_, x)| x.prefix().is_none())
                         .flat_map(|(i, x)| {
-                            x.search("", &mut self.context.write())
+                            x.search("", &self.context.read())
                                 .into_iter()
                                 .map(move |x| (i, Rc::new(x)))
                         })
@@ -1561,7 +1569,7 @@ fn start() {
 macro_rules! plugin_vec {
     ( $( $x:path ),+ $(,)? ) => {
         {
-            let mut temp_vec: Vec<fn(&mut Context) -> Box<dyn Plugin>> = Vec::new();
+            let mut temp_vec: Vec<fn(&Context) -> Box<dyn Plugin>> = Vec::new();
             $(
                 temp_vec.push(|x| {
                     Box::new(<$x>::new(x))

@@ -112,7 +112,6 @@ row {
     padding: 8px 0 4px 0;
     /* border-radius: 12px; */
     /* background-color: $surfaceContainerHigh; */
-    border-bottom: $outline 1px solid;
 
     >entry {
         all: unset;
@@ -141,7 +140,7 @@ row {
 #action_bar {
     margin: 0 8px;
     padding: 4px 0 8px 0;
-    border-top: $outline 1px solid;
+    border-top: $outline 2px solid;
 }
 
 entry {
@@ -272,5 +271,34 @@ entry {
             margin-left: 8px;
             margin-right: 12px;
         }
+    }
+}
+
+$loader-size: 0.15;
+
+.loader {
+    min-height: 2px;
+    margin: 0 8px;
+
+    animation: loader-keyframes 2s infinite linear;
+    transition: background 0.25s;
+
+    background-repeat: no-repeat;
+    background-size: calc($loader-size * 100%);
+    background-color: $surfaceVariant;
+
+    &.loading {
+        background-image: linear-gradient(to right, transparent, $accent 40%, $accent 60%, transparent);
+        transition: background 0.5s 0.5s ease-in;
+    }
+}
+
+@keyframes loader-keyframes {
+    0% {
+        background-position: calc($loader-size / ($loader-size - 1) * 100%);
+    }
+
+    100% {
+        background-position: calc(1 / (1 - $loader-size) * 100%);
     }
 }

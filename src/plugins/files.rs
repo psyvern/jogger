@@ -22,7 +22,7 @@ fn reduce_tilde(path: &Path, home_dir: &str) -> String {
 }
 
 impl Files {
-    pub fn new(_: &mut Context) -> Self {
+    pub fn new(_: &Context) -> Self {
         Self {
             home_dir: std::env::var("HOME").unwrap(),
         }
@@ -298,7 +298,7 @@ impl Files {
     pub fn search<'a>(
         &'a self,
         query: &str,
-        context: &'a mut Context,
+        context: &'a Context,
     ) -> Box<dyn Iterator<Item = Entry> + 'a> {
         self.search_inner(query, &context.apps)
             .unwrap_or(Box::new(std::iter::empty()))
@@ -314,7 +314,7 @@ impl Plugin for Files {
         Some("system-file-manager")
     }
 
-    fn search(&self, query: &str, context: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, context: &Context) -> Vec<Entry> {
         self.search(query, context).collect()
     }
 }

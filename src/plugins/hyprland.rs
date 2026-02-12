@@ -124,7 +124,7 @@ impl From<&HyprlandClient> for Entry {
 }
 
 impl Hyprland {
-    pub fn new(_: &mut Context) -> Self {
+    pub fn new(_: &Context) -> Self {
         let locales = get_languages_from_env();
         let entries: HashMap<_, _> = freedesktop_desktop_entry::Iter::new(default_paths())
             .entries(Some(&locales))
@@ -220,7 +220,7 @@ impl Plugin for Hyprland {
         Some("window_list")
     }
 
-    fn search(&self, query: &str, _: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, _: &Context) -> Vec<Entry> {
         if query.is_empty() {
             self.clients
                 .iter()

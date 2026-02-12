@@ -520,7 +520,7 @@ pub fn read_desktop_entries() -> Vec<DesktopEntry> {
 }
 
 impl Applications {
-    pub fn new(context: &mut Context) -> Self {
+    pub fn new(context: &Context) -> Self {
         let opener = context
             .apps
             .default_for_mime(&"application/x-desktop".parse().unwrap())
@@ -542,7 +542,7 @@ impl Plugin for Applications {
         "Applications"
     }
 
-    fn search(&self, query: &str, context: &mut Context) -> Vec<Entry> {
+    fn search(&self, query: &str, context: &Context) -> Vec<Entry> {
         if query.is_empty() {
             context
                 .apps
