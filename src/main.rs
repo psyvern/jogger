@@ -748,9 +748,6 @@ impl AsyncComponent for AppModel {
                 GBox {
                     set_widget_name: "search_bar",
 
-                    #[watch]
-                    set_class_active: ("error", model.selected_plugin.is_some() && model.list_entries.is_empty()),
-
                     Button {
                         set_focusable: false,
                         set_cursor_from_name: Some("pointer"),
@@ -1261,18 +1258,9 @@ impl AsyncComponent for AppModel {
                     Default::default()
                 };
 
-                let style = include_str!("../style.scss");
-                let custom_style = base_dirs.place_config_file("style.scss").unwrap();
-                let custom_style = std::fs::read_to_string(custom_style).unwrap_or_default();
-                let style = format!(
-                    "$accent: {};\n{}\n{}",
-                    config.highlight_color, style, custom_style,
-                );
-                let style = grass::from_string(style, &Default::default()).unwrap_or_default();
-
-                self.css_provider.load_from_string(&style);
-
                 self.config = config;
+
+                load_css(&base_dirs, &self.config, &self.css_provider);
             }
             AppMsg::Move(direction) => {
                 if let Some(action) = self.selected_action {
@@ -1520,6 +1508,28 @@ fn main() {
     }
 }
 
+fn load_css(base: &BaseDirectories, config: &AppConfig, provider: &CssProvider) {
+    let style = include_str!("../style.scss");
+    let custom_style = base.place_config_file("style.scss").unwrap();
+    let custom_style = std::fs::read_to_string(custom_style).unwrap_or_default();
+    let style = grass::from_string(
+        format!(
+            "$accent: {};\n{}\n{}",
+            config.highlight_color, style, custom_style,
+        ),
+        &Default::default(),
+    )
+    .or_else(|_| {
+        grass::from_string(
+            format!("$accent: {};\n{}", config.highlight_color, style),
+            &Default::default(),
+        )
+    })
+    .unwrap_or_default();
+
+    provider.load_from_string(&style);
+}
+
 fn start() {
     let plugins = plugin_vec![
         plugins::applications::Applications,
@@ -1544,17 +1554,8 @@ fn start() {
         Default::default()
     };
 
-    let style = include_str!("../style.scss");
-    let custom_style = base_dirs.place_config_file("style.scss").unwrap();
-    let custom_style = std::fs::read_to_string(custom_style).unwrap_or_default();
-    let style = format!(
-        "$accent: {};\n{}\n{}",
-        config.highlight_color, style, custom_style,
-    );
-    let style = grass::from_string(style, &Default::default()).unwrap_or_default();
-
     let provider = gtk::CssProvider::new();
-    provider.load_from_string(&style);
+    load_css(&base_dirs, &config, &provider);
     gtk::style_context_add_provider_for_display(
         &gdk::Display::default().expect("Could not connect to a display."),
         &provider,

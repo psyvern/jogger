@@ -15,8 +15,6 @@ $errorContainer: #93000a;
 
 * {
     all: unset;
-    color: unset;
-    border-color: unset;
 }
 
 placeholder {
@@ -36,14 +34,12 @@ window.dragging {
 
 list {
     margin-top: 8px;
-    background-color: unset;
 }
 
 grid {
     margin: 4px;
 
     >button {
-        all: unset;
         padding: 0 8px;
         margin: 4px;
 
@@ -114,20 +110,11 @@ row {
     /* background-color: $surfaceContainerHigh; */
 
     >entry {
-        all: unset;
-
         margin: 6px;
         font-size: 16px;
     }
 
-    &.error {
-        background-color: $error;
-        color: $onError;
-    }
-
     >button {
-        all: unset;
-
         padding: 6px 8px;
         border-radius: 6px;
 
@@ -146,12 +133,6 @@ row {
 entry {
     >text>selection {
         background-color: transparentize($accent, 0.5);
-    }
-
-    &.error {
-        background-color: $error;
-        color: $onError;
-        caret-color: $onError;
     }
 }
 
@@ -230,6 +211,13 @@ entry {
     font-weight: 500;
     color: $outline;
     font-size: 15px;
+}
+
+#search_bar>entry,
+.name,
+.description,
+.tag {
+    font-feature-settings: "liga" off;
 }
 
 .actions_box {
