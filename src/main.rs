@@ -555,15 +555,14 @@ impl AppModel {
                 if let Some(emulator) = self.context.read().apps.terminal_emulator() {
                     let mut command = Command::new(emulator.program());
 
-                    if let Some(working_directory) = working_directory {
-                        if let Some(arg) = &emulator.terminal_args.dir {
-                            if arg.ends_with('=') {
-                                command
-                                    .arg(format!("{arg}{}", working_directory.to_string_lossy()));
-                            } else {
-                                command.arg(arg);
-                                command.arg(working_directory);
-                            }
+                    if let Some(working_directory) = working_directory
+                        && let Some(arg) = &emulator.terminal_args.dir
+                    {
+                        if arg.ends_with('=') {
+                            command.arg(format!("{arg}{}", working_directory.to_string_lossy()));
+                        } else {
+                            command.arg(arg);
+                            command.arg(working_directory);
                         }
                     }
 
@@ -1270,12 +1269,12 @@ impl AsyncComponent for AppModel {
                 AppMsg::Show
             }),
             AppMsg::ToggleActions => {
-                if let Some(entry) = self.current_entry() {
-                    if entry.actions.len() > 1 {
-                        self.selected_action = match self.selected_action {
-                            Some(_) => None,
-                            None => Some(0),
-                        }
+                if let Some(entry) = self.current_entry()
+                    && entry.actions.len() > 1
+                {
+                    self.selected_action = match self.selected_action {
+                        Some(_) => None,
+                        None => Some(0),
                     }
                 }
             }

@@ -30,7 +30,7 @@ impl Component for SearchEntryModel {
     type CommandOutput = ();
 
     view! {
-        root = gtk::Entry {
+        gtk::Entry {
             set_hexpand: true,
             set_placeholder_text: Some("Search..."),
             set_input_hints: InputHints::NO_EMOJI,

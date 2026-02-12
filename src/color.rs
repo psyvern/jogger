@@ -39,12 +39,11 @@ impl FromStr for PangoColor {
                     }
                 };
 
-                let mut r =
-                    u16::from_str_radix(&s[1..(1 + len)], 16).map_err(|x| x.kind().clone())?;
-                let mut g = u16::from_str_radix(&s[(1 + len)..(1 + 2 * len)], 16)
-                    .map_err(|x| x.kind().clone())?;
-                let mut b = u16::from_str_radix(&s[(1 + 2 * len)..(1 + 3 * len)], 16)
-                    .map_err(|x| x.kind().clone())?;
+                let mut r = u16::from_str_radix(&s[1..1 + len], 16).map_err(|x| *x.kind())?;
+                let mut g =
+                    u16::from_str_radix(&s[1 + len..1 + 2 * len], 16).map_err(|x| *x.kind())?;
+                let mut b =
+                    u16::from_str_radix(&s[1 + 2 * len..1 + 3 * len], 16).map_err(|x| *x.kind())?;
 
                 let mut bits = len * 4;
                 r <<= 16 - bits;

@@ -312,18 +312,10 @@ pub struct SubEntry {
     pub action: EntryAction,
 }
 
+#[derive(Default)]
 pub struct Context {
     messages: VecDeque<String>,
     pub apps: XdgAppDatabase,
-}
-
-impl Default for Context {
-    fn default() -> Self {
-        Self {
-            messages: VecDeque::new(),
-            apps: XdgAppDatabase::new(),
-        }
-    }
 }
 
 impl Context {
