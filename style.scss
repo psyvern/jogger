@@ -122,6 +122,19 @@ row {
             background-color: $surfaceContainerHigh;
         }
     }
+
+    #lock {
+        font-family: "Material Symbols Outlined";
+        color: mix($outline, white, 50);
+        font-size: 20px;
+        line-height: 1em;
+        font-weight: 600;
+    }
+
+    #lock .active {
+        font-family: "Material Symbols";
+        color: white;
+    }
 }
 
 #action_bar {

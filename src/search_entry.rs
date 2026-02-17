@@ -18,6 +18,7 @@ pub enum SearchEntryMsg {
     Close,
     Reload,
     ToggleActions,
+    ToggleLock,
 }
 
 pub struct SearchEntryModel {}
@@ -116,6 +117,12 @@ impl Component for SearchEntryModel {
                         }
                         Key::c => {
                             if modifier == ModifierType::CONTROL_MASK && root.selection_bounds().is_none() {
+                                return Propagation::Stop;
+                            }
+                        }
+                        Key::l => {
+                            if modifier == ModifierType::CONTROL_MASK {
+                                sender.output(SearchEntryMsg::ToggleLock).unwrap();
                                 return Propagation::Stop;
                             }
                         }

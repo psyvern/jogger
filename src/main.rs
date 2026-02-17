@@ -462,12 +462,14 @@ enum AppMsg {
     Escape,
     Show,
     Hide,
+    MaybeHide,
     Toggle,
     ToggleActions,
     Reload,
     SearchResults(Vec<(usize, Entry)>),
     PluginLoaded(Box<dyn Plugin>),
     SetDragging(bool),
+    ToggleLock,
 }
 
 #[derive(Debug)]
@@ -503,6 +505,7 @@ struct AppModel {
     css_provider: CssProvider,
     selected_action: Option<usize>,
     loading: bool,
+    locked: bool,
 }
 
 impl AppModel {
@@ -543,7 +546,7 @@ impl AppModel {
                         Some(action) => context.apps.launch_action(app, action, &args),
                         None => context.apps.launch(app, &args),
                     } {
-                        sender.input(AppMsg::Hide);
+                        sender.input(AppMsg::MaybeHide);
                     }
                 }
             }
@@ -579,7 +582,7 @@ impl AppModel {
                             command.get_args(),
                             error
                         ),
-                        _ => sender.input(AppMsg::Hide),
+                        _ => sender.input(AppMsg::MaybeHide),
                     }
                 }
             }
@@ -592,10 +595,10 @@ impl AppModel {
                 )
                 .expect("Failed to serve copy bytes");
 
-                sender.input(AppMsg::Hide);
+                sender.input(AppMsg::MaybeHide);
             }
             EntryAction::Shell(exec) => {
-                sender.input(AppMsg::Hide);
+                sender.input(AppMsg::MaybeHide);
 
                 Dispatch::call(DispatchType::Exec(exec)).unwrap();
 
@@ -615,7 +618,7 @@ impl AppModel {
                 path,
                 ..
             } => {
-                sender.input(AppMsg::Hide);
+                sender.input(AppMsg::MaybeHide);
 
                 Command::new(command)
                     .args(args)
@@ -631,7 +634,7 @@ impl AppModel {
             }
             EntryAction::HyprctlExec(value) => {
                 Dispatch::call(DispatchType::Exec(value)).unwrap();
-                sender.input(AppMsg::Hide);
+                sender.input(AppMsg::MaybeHide);
             }
         }
     }
@@ -820,7 +823,24 @@ impl AsyncComponent for AppModel {
                         },
                     },
 
-                    append: model.search_entry.widget()
+                    append: model.search_entry.widget(),
+
+                    Button {
+                        set_focusable: false,
+                        set_cursor_from_name: Some("pointer"),
+                        set_widget_name: "lock",
+
+                        connect_clicked[sender] => move |_| {
+                            sender.input(AppMsg::ToggleLock);
+                        },
+
+                        Label {
+                            #[watch]
+                            set_label: if model.locked { "lock" } else { "lock_open_right" },
+                            #[watch]
+                            set_class_active: ("active", model.locked),
+                        },
+                    }
                 },
 
                 GBox {
@@ -981,6 +1001,7 @@ impl AsyncComponent for AppModel {
                     SearchEntryMsg::UnselectPlugin => AppMsg::ClearPrefix,
                     SearchEntryMsg::Close => AppMsg::Escape,
                     SearchEntryMsg::ToggleActions => AppMsg::ToggleActions,
+                    SearchEntryMsg::ToggleLock => AppMsg::ToggleLock,
                     SearchEntryMsg::Reload => AppMsg::Reload,
                 });
 
@@ -1002,6 +1023,7 @@ impl AsyncComponent for AppModel {
             css_provider: init.2,
             selected_action: None,
             loading: false,
+            locked: false,
         };
 
         let entries = model.list_entries.widget();
@@ -1262,6 +1284,12 @@ impl AsyncComponent for AppModel {
                 self.selected_plugin = None;
                 self.selected_entry = 0;
                 self.grid_entries.broadcast(EntryMsg::Unselect);
+                self.locked = false;
+            }
+            AppMsg::MaybeHide => {
+                if !self.locked {
+                    sender.input(AppMsg::Hide);
+                }
             }
             AppMsg::Toggle => sender.input(if self.visible {
                 AppMsg::Hide
@@ -1533,6 +1561,9 @@ impl AsyncComponent for AppModel {
                 } {
                     Command::new("sh").arg("-c").arg(command).output().unwrap();
                 }
+            }
+            AppMsg::ToggleLock => {
+                self.locked = !self.locked;
             }
         }
     }
