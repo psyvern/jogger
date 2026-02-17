@@ -479,12 +479,18 @@ fn default_highlight_color() -> PangoColor {
     "#A2C9FE".parse().unwrap()
 }
 
+fn default_window_size() -> [usize; 2] {
+    [760, 760]
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct AppConfig {
     drag_command: Option<String>,
     drop_command: Option<String>,
     #[serde(default = "default_highlight_color")]
     highlight_color: PangoColor,
+    #[serde(default = "default_window_size")]
+    window_size: [usize; 2],
 }
 
 struct AppModel {
@@ -787,8 +793,11 @@ impl AsyncComponent for AppModel {
     view! {
         Window {
             set_title: Some("Jogger"),
-            set_default_width: 760,
-            set_default_height: 760,
+            #[watch]
+            set_default_size: (
+                model.config.window_size[0] as i32,
+                model.config.window_size[1] as i32,
+            ),
             #[watch]
             set_visible: model.visible,
 
