@@ -11,10 +11,14 @@ use dbus_crossroads::Crossroads;
 use gtk::cairo::Region;
 use gtk::gdk::prelude::SurfaceExt;
 use gtk::gdk::{ContentProvider, Display, FileList, Key, ModifierType};
+use gtk::glib::Propagation;
 use gtk::glib::translate::ToGlibPtr;
 use gtk::glib::value::ToValue;
-use gtk::prelude::{GestureSingleExt, NativeExt};
-use gtk::{CenterBox, CssProvider, DragSource, GestureClick, IconTheme, Orientation, Separator};
+use gtk::prelude::{EventControllerExt, GestureSingleExt, NativeExt};
+use gtk::{
+    CenterBox, CssProvider, DragSource, EventControllerKey, GestureClick, IconTheme, Orientation,
+    PropagationPhase, Separator,
+};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -46,7 +50,7 @@ use relm4::{
     factory::{Position, positions::GridPosition},
     prelude::{DynamicIndex, FactoryComponent, FactoryVecDeque},
 };
-use search_entry::{SearchEntryModel, SearchEntryMsg};
+use search_entry::SearchEntryModel;
 
 use crate::color::PangoColor;
 use crate::interface::{Context, EntryIcon, FormattedString};
@@ -812,6 +816,122 @@ impl AsyncComponent for AppModel {
             GBox {
                 set_orientation: Vertical,
 
+                add_controller = EventControllerKey::new() {
+                    set_propagation_phase: PropagationPhase::Capture,
+
+                    connect_key_pressed[sender, entry = model.search_entry.widget().clone()] => move |_, key, _, modifier| {
+                        let is_empty = entry.text().is_empty();
+
+                        match key {
+                            Key::Tab | Key::ISO_Left_Tab => {
+                                if modifier.contains(ModifierType::SHIFT_MASK) {
+                                    sender.input(AppMsg::Move(MoveDirection::Back));
+                                } else {
+                                    sender.input(AppMsg::Move(MoveDirection::Forward));
+                                }
+                                return Propagation::Stop;
+                            }
+                            Key::Home | Key::KP_Home => {
+                                if is_empty {
+                                    sender.input(AppMsg::Move(MoveDirection::Start));
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::End | Key::KP_End => {
+                                if is_empty {
+                                    sender.input(AppMsg::Move(MoveDirection::End));
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::Page_Up | Key::KP_Page_Up => {
+                                sender.input(AppMsg::Move(MoveDirection::PageUp));
+                                return Propagation::Stop;
+                            }
+                            Key::Page_Down | Key::KP_Page_Down => {
+                                sender.input(AppMsg::Move(MoveDirection::PageDown));
+                                return Propagation::Stop;
+                            }
+                            Key::Up | Key::KP_Up => {
+                                sender.input(AppMsg::Move(MoveDirection::Up));
+                                return Propagation::Stop;
+                            }
+                            Key::Down | Key::KP_Down => {
+                                sender.input(AppMsg::Move(MoveDirection::Down));
+                                return Propagation::Stop;
+                            }
+                            Key::Left | Key::KP_Left => {
+                                if is_empty {
+                                    sender.input(AppMsg::Move(MoveDirection::Left));
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::Right | Key::KP_Right => {
+                                if is_empty {
+                                    sender.input(AppMsg::Move(MoveDirection::Right));
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::BackSpace => {
+                                if is_empty {
+                                    sender.input(AppMsg::ClearPrefix);
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::b => {
+                                if modifier == ModifierType::CONTROL_MASK {
+                                    sender.input(AppMsg::ToggleActions);
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::c => {
+                                if modifier == ModifierType::CONTROL_MASK && entry.selection_bounds().is_none() {
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::l => {
+                                if modifier == ModifierType::CONTROL_MASK {
+                                    sender.input(AppMsg::ToggleLock);
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::r => {
+                                if modifier == ModifierType::CONTROL_MASK {
+                                    sender.input(AppMsg::Reload);
+                                    return Propagation::Stop;
+                                }
+                            }
+                            Key::F5 => {
+                                sender.input(AppMsg::Reload);
+                                return Propagation::Stop;
+                            },
+                            _ => {}
+                        }
+
+                        Propagation::Proceed
+                    },
+
+                    connect_key_released[sender, entry = model.search_entry.widget().clone()] => move |_, key, _, modifier| {
+                        match key {
+                            Key::Return | Key::KP_Enter if modifier == ModifierType::NO_MODIFIER_MASK  => {
+                                sender.input(AppMsg::ActivateSelected);
+                            }
+                            Key::Escape => {
+                                sender.input(AppMsg::Escape);
+                            }
+                            Key::c => {
+                                if modifier == ModifierType::CONTROL_MASK && entry.selection_bounds().is_none() {
+                                    sender.input(AppMsg::Shortcut(key, modifier));
+                                }
+                            }
+                            _ => {
+                                if modifier != ModifierType::NO_MODIFIER_MASK {
+                                    sender.input(AppMsg::Shortcut(key, modifier));
+                                }
+                            }
+                        };
+                    },
+                },
+
                 GBox {
                     set_widget_name: "search_bar",
 
@@ -999,20 +1119,9 @@ impl AsyncComponent for AppModel {
 
         let grid_size = 5;
 
-        let search_entry =
-            SearchEntryModel::builder()
-                .launch(())
-                .forward(sender.input_sender(), |output| match output {
-                    SearchEntryMsg::Change(query) => AppMsg::Search(query),
-                    SearchEntryMsg::Move(direction) => AppMsg::Move(direction),
-                    SearchEntryMsg::Activate => AppMsg::ActivateSelected,
-                    SearchEntryMsg::Shortcut(key, modifier) => AppMsg::Shortcut(key, modifier),
-                    SearchEntryMsg::UnselectPlugin => AppMsg::ClearPrefix,
-                    SearchEntryMsg::Close => AppMsg::Escape,
-                    SearchEntryMsg::ToggleActions => AppMsg::ToggleActions,
-                    SearchEntryMsg::ToggleLock => AppMsg::ToggleLock,
-                    SearchEntryMsg::Reload => AppMsg::Reload,
-                });
+        let search_entry = SearchEntryModel::builder()
+            .launch(())
+            .forward(sender.input_sender(), AppMsg::Search);
 
         let model = AppModel {
             query: String::new(),
