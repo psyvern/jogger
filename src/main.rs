@@ -1296,7 +1296,9 @@ impl AsyncComponent for AppModel {
                 self.locked = false;
             }
             AppMsg::MaybeHide => {
-                if !self.locked {
+                if self.locked {
+                    self.selected_action = None;
+                } else {
                     sender.input(AppMsg::Hide);
                 }
             }
