@@ -1653,10 +1653,21 @@ impl AsyncComponent for AppModel {
                     self.grid_entries
                         .try_send(self.selected_entry, EntryMsg::Unselect);
                     self.grid_entries.try_send(index, EntryMsg::Select);
+
+                    self.grid_entries.get(index).and_then(|entry| {
+                        self.plugins.read().get(entry.plugin)?.select(&entry.entry);
+                        Some(())
+                    });
                 } else {
                     self.list_entries
                         .try_send(self.selected_entry, EntryMsg::Unselect);
                     self.list_entries.try_send(index, EntryMsg::Select);
+
+                    self.list_entries.get(index).and_then(|entry| {
+                        self.plugins.read().get(entry.plugin)?.select(&entry.entry);
+                        Some(())
+                    });
+
                     sender.input(AppMsg::ScrollToSelected);
                 }
 
@@ -1683,14 +1694,7 @@ impl AsyncComponent for AppModel {
             AppMsg::ClearPrefix => {
                 self.selected_plugin = None;
             }
-            AppMsg::ScrollToSelected => {
-                self.list_entries
-                    .get(self.selected_entry)
-                    .and_then(|entry| {
-                        self.plugins.read().get(entry.plugin)?.select(&entry.entry);
-                        Some(())
-                    });
-            }
+            AppMsg::ScrollToSelected => {}
             AppMsg::ScrollToStart => {}
             AppMsg::SearchResults(entries) => {
                 self.loading = false;
