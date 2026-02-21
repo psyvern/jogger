@@ -1365,7 +1365,7 @@ impl AsyncComponent for AppModel {
                                         plugin
                                             .search(&query, &context)
                                             .into_iter()
-                                            .map(|x| (i, x))
+                                            .map(|x| (*i, x))
                                             .collect_vec()
                                     } else {
                                         plugins
@@ -1378,7 +1378,7 @@ impl AsyncComponent for AppModel {
                                             })
                                             .map(|(i, _, x)| {
                                                 (
-                                                    i,
+                                                    *i,
                                                     Entry {
                                                         name: FormattedString::plain(x.name()),
                                                         tag: None,
@@ -1405,7 +1405,7 @@ impl AsyncComponent for AppModel {
                                                     .flat_map(|(i, _, x)| {
                                                         x.search(&query, &context)
                                                             .into_iter()
-                                                            .map(move |x| (i, x))
+                                                            .map(move |x| (*i, x))
                                                     }),
                                             )
                                             .collect_vec()
@@ -1414,7 +1414,7 @@ impl AsyncComponent for AppModel {
                                 Some((i, _, plugin)) => plugin
                                     .search(&query, &context)
                                     .into_iter()
-                                    .map(|x| (i, x))
+                                    .map(|x| (*i, x))
                                     .collect_vec(),
                             }
                         };
