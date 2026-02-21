@@ -54,7 +54,6 @@ use search_entry::SearchEntryModel;
 
 use crate::color::PangoColor;
 use crate::interface::{Context, EntryIcon, FormattedString};
-use crate::plugins::files::Files;
 use crate::utils::CommandExt;
 
 trait FactoryVecDequeExt<T> {
@@ -486,6 +485,51 @@ fn default_window_size() -> [usize; 2] {
     [760, 760]
 }
 
+fn default_default_plugin() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum PluginType {
+    Applications,
+    Files,
+    Windows,
+    Math,
+    Clipboard,
+    Terminal,
+    Ssh,
+    Unicode,
+    Emojis,
+}
+
+impl PluginType {
+    fn to_plugin(self, context: &Context) -> Box<dyn Plugin> {
+        match self {
+            Self::Applications => Box::new(plugins::applications::Applications::new(context)),
+            Self::Files => Box::new(plugins::files::Files::new(context)),
+            Self::Windows => Box::new(plugins::hyprland::Hyprland::new(context)),
+            Self::Math => Box::new(plugins::math::Math::new(context)),
+            Self::Clipboard => Box::new(plugins::clipboard::Clipboard::new(context)),
+            Self::Terminal => Box::new(plugins::commands::Commands::new(context)),
+            Self::Ssh => Box::new(plugins::ssh::Ssh::new(context)),
+            Self::Unicode => Box::new(plugins::unicode::Unicode::new(context)),
+            Self::Emojis => Box::new(plugins::emoji::Emojis::new(context)),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct PluginConfig {
+    r#type: PluginType,
+    #[serde(default = "default_default_plugin")]
+    default: bool,
+    #[serde(default, with = "serde_regex")]
+    regex: Option<regex::Regex>,
+    #[serde(default = "default_default_plugin")]
+    replace: bool,
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct AppConfig {
     drag_command: Option<String>,
@@ -494,13 +538,13 @@ struct AppConfig {
     highlight_color: PangoColor,
     #[serde(default = "default_window_size")]
     window_size: [usize; 2],
+    plugins: Vec<PluginConfig>,
 }
 
 struct AppModel {
     query: String,
     thread_handle: Option<stoppable_thread::StoppableHandle<()>>,
     plugins: Arc<RwLock<Vec<Box<dyn Plugin>>>>,
-    plugins_fn: Vec<fn(&Context) -> Box<dyn Plugin>>,
     selected_plugin: Option<usize>,
     selected_entry: usize,
     list_entries: FactoryVecDeque<ListEntryComponent>,
@@ -791,7 +835,7 @@ impl AsyncComponent for AppModel {
     type Output = ();
     type CommandOutput = CommandMsg;
 
-    type Init = (AppConfig, Vec<fn(&Context) -> Box<dyn Plugin>>, CssProvider);
+    type Init = (AppConfig, CssProvider);
 
     view! {
         Window {
@@ -1121,11 +1165,12 @@ impl AsyncComponent for AppModel {
             .launch(())
             .forward(sender.input_sender(), AppMsg::Search);
 
+        let plugins = init.0.plugins.clone();
+
         let model = AppModel {
             query: String::new(),
             thread_handle: None,
             plugins: Arc::new(RwLock::new(Vec::new())),
-            plugins_fn: init.1.clone(),
             selected_plugin: None,
             selected_entry: 0,
             list_entries,
@@ -1136,7 +1181,7 @@ impl AsyncComponent for AppModel {
             context: Arc::new(RwLock::new(Context::default())),
             dragging: false,
             config: init.0,
-            css_provider: init.2,
+            css_provider: init.1,
             selected_action: None,
             loading: false,
             locked: false,
@@ -1187,8 +1232,8 @@ impl AsyncComponent for AppModel {
         let context = model.context.clone();
         tokio::spawn(async move {
             let context = context.read();
-            for plugin in init.1 {
-                sender.input(AppMsg::PluginLoaded(plugin(&context)));
+            for plugin in plugins {
+                sender.input(AppMsg::PluginLoaded(plugin.r#type.to_plugin(&context)));
             }
         });
 
@@ -1260,11 +1305,20 @@ impl AsyncComponent for AppModel {
                 self.query = query;
 
                 if self.selected_plugin.is_none() && !self.query.is_empty() {
-                    let plugin = self.plugins.read();
-                    let plugin = plugin
+                    let plugins = self.plugins.read();
+                    let plugin = self
+                        .config
+                        .plugins
                         .iter()
+                        .zip(plugins.iter())
                         .enumerate()
-                        .find(|(_, plugin)| plugin.prefix().is_some_and(|x| x == self.query));
+                        .find(|(_, (plugin, _))| {
+                            plugin.replace
+                                && plugin
+                                    .regex
+                                    .as_ref()
+                                    .is_some_and(|x| x.is_match(&self.query))
+                        });
 
                     if plugin.is_some() {
                         self.search_entry.widget().set_text("");
@@ -1281,31 +1335,48 @@ impl AsyncComponent for AppModel {
                     self.loading = true;
 
                     let plugins = self.plugins.clone();
+                    let config_plugins = self.config.plugins.clone();
                     let selected_plugin = self.selected_plugin;
                     let query = self.query.clone();
                     let context = self.context.clone();
                     self.thread_handle = Some(stoppable_thread::spawn(move |stopped| {
                         let context = context.read();
+
+                        let plugins = plugins.read();
+                        let plugins = config_plugins
+                            .iter()
+                            .zip(plugins.iter())
+                            .enumerate()
+                            .map(|(a, (b, c))| (a, b, c))
+                            .collect_vec();
+
                         let entries = {
-                            let plugins = plugins.read();
-                            match selected_plugin.and_then(|i| Some((i, plugins.get(i)?))) {
+                            match selected_plugin.and_then(|i| plugins.get(i)) {
                                 None => {
-                                    if query.starts_with(['~', '/']) {
-                                        Files::new(&context)
+                                    let plugin = plugins.iter().find(|(_, plugin, _)| {
+                                        !plugin.replace
+                                            && plugin
+                                                .regex
+                                                .as_ref()
+                                                .is_some_and(|x| x.is_match(&query))
+                                    });
+
+                                    if let Some((i, _, plugin)) = plugin {
+                                        plugin
                                             .search(&query, &context)
-                                            .map(|x| (999, x))
+                                            .into_iter()
+                                            .map(|x| (i, x))
                                             .collect_vec()
                                     } else {
                                         plugins
                                             .iter()
-                                            .enumerate()
-                                            .filter(|x| x.1.has_entry())
-                                            .filter(|x| {
-                                                x.1.name()
+                                            .filter(|(_, x, _)| !x.default)
+                                            .filter(|(_, _, x)| {
+                                                x.name()
                                                     .to_lowercase()
                                                     .contains(&query.to_lowercase())
                                             })
-                                            .map(|(i, x)| {
+                                            .map(|(i, _, x)| {
                                                 (
                                                     i,
                                                     Entry {
@@ -1317,7 +1388,7 @@ impl AsyncComponent for AppModel {
                                                         ),
                                                         small_icon: EntryIcon::None,
                                                         actions: vec![
-                                                            EntryAction::ChangePlugin(Some(i))
+                                                            EntryAction::ChangePlugin(Some(*i))
                                                                 .into(),
                                                         ],
                                                         id: String::new(),
@@ -1328,10 +1399,10 @@ impl AsyncComponent for AppModel {
                                             .chain(
                                                 plugins
                                                     .iter()
-                                                    .enumerate()
-                                                    .filter(|x| !x.1.has_entry())
-                                                    .filter(|(_, x)| x.prefix().is_none())
-                                                    .flat_map(|(i, x)| {
+                                                    .filter(|(_, plugin, _)| {
+                                                        plugin.default && plugin.regex.is_none()
+                                                    })
+                                                    .flat_map(|(i, _, x)| {
                                                         x.search(&query, &context)
                                                             .into_iter()
                                                             .map(move |x| (i, x))
@@ -1340,7 +1411,7 @@ impl AsyncComponent for AppModel {
                                             .collect_vec()
                                     }
                                 }
-                                Some((i, plugin)) => plugin
+                                Some((i, _, plugin)) => plugin
                                     .search(&query, &context)
                                     .into_iter()
                                     .map(|x| (i, x))
@@ -1431,12 +1502,12 @@ impl AsyncComponent for AppModel {
 
                 {
                     let sender = sender.clone();
-                    let plugins = self.plugins_fn.clone();
+                    let plugins = self.config.plugins.clone();
                     let context = self.context.clone();
                     tokio::spawn(async move {
                         let context = context.read();
                         for plugin in plugins {
-                            sender.input(AppMsg::PluginLoaded(plugin(&context)));
+                            sender.input(AppMsg::PluginLoaded(plugin.r#type.to_plugin(&context)));
                         }
                     });
                 }
@@ -1635,13 +1706,16 @@ impl AsyncComponent for AppModel {
             AppMsg::PluginLoaded(plugin) => {
                 self.plugins.write().push(plugin);
                 let plugins = self.plugins.read();
-                if plugins.len() == self.plugins_fn.len() {
+                if plugins.len() == self.config.plugins.len() {
                     let plugins = self.plugins.read();
-                    let entries = plugins
+                    let entries = self
+                        .config
+                        .plugins
                         .iter()
+                        .zip(plugins.iter())
                         .enumerate()
-                        .filter(|(_, x)| x.prefix().is_none())
-                        .flat_map(|(i, x)| {
+                        .filter(|(_, (plugin, _))| plugin.default && plugin.regex.is_none())
+                        .flat_map(|(i, (_, x))| {
                             x.search("", &self.context.read())
                                 .into_iter()
                                 .map(move |x| (i, Rc::new(x)))
@@ -1741,17 +1815,6 @@ fn load_css(base: &BaseDirectories, config: &AppConfig, provider: &CssProvider) 
 }
 
 fn start() {
-    let plugins = plugin_vec![
-        plugins::applications::Applications,
-        plugins::hyprland::Hyprland,
-        plugins::math::Math,
-        plugins::clipboard::Clipboard,
-        plugins::commands::Commands,
-        plugins::ssh::Ssh,
-        plugins::unicode::Unicode,
-        plugins::emoji::Emojis,
-    ];
-
     let app = RelmApp::new("com.psyvern.jogger").with_args(Vec::new());
 
     let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
@@ -1772,21 +1835,6 @@ fn start() {
         gtk::STYLE_PROVIDER_PRIORITY_USER,
     );
 
-    app.run_async::<AppModel>((config, plugins, provider));
+    app.run_async::<AppModel>((config, provider));
     // app.run::<AppModel>(plugins);
-}
-
-#[macro_export]
-macro_rules! plugin_vec {
-    ( $( $x:path ),+ $(,)? ) => {
-        {
-            let mut temp_vec: Vec<fn(&Context) -> Box<dyn Plugin>> = Vec::new();
-            $(
-                temp_vec.push(|x| {
-                    Box::new(<$x>::new(x))
-                });
-            )*
-            temp_vec
-        }
-    };
 }

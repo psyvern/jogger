@@ -137,8 +137,4 @@ impl Plugin for Unicode {
             })
             .collect()
     }
-
-    fn has_entry(&self) -> bool {
-        true
-    }
 }

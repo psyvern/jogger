@@ -155,8 +155,4 @@ impl Plugin for Emojis {
             .take(128)
             .collect()
     }
-
-    fn has_entry(&self) -> bool {
-        true
-    }
 }

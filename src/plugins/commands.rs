@@ -26,10 +26,6 @@ impl Plugin for Commands {
         Some("terminal")
     }
 
-    fn prefix(&self) -> Option<&str> {
-        Some(">")
-    }
-
     fn search(&self, query: &str, _: &Context) -> Vec<Entry> {
         vec![Entry {
             name: FormattedString::from_style(query.trim(), FormatStyle::Monospace),

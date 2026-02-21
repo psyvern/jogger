@@ -160,10 +160,6 @@ impl Plugin for Hyprland {
         "Windows"
     }
 
-    fn has_entry(&self) -> bool {
-        true
-    }
-
     fn open(&mut self) {
         let Ok(current_workspace) = Workspace::get_active() else {
             return;

@@ -23,20 +23,12 @@ pub trait Plugin: Debug + Send + Sync {
         None
     }
 
-    fn prefix(&self) -> Option<&str> {
-        None
-    }
-
     #[allow(unused)]
     fn search(&self, query: &str, context: &Context) -> Vec<Entry> {
         Vec::new()
     }
 
     fn select(&self, _entry: &Entry) {}
-
-    fn has_entry(&self) -> bool {
-        false
-    }
 }
 
 #[derive(Clone, Debug)]

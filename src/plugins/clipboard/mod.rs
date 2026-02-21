@@ -17,8 +17,4 @@ impl Plugin for Clipboard {
     fn icon(&self) -> Option<&str> {
         Some("clipboard")
     }
-
-    fn has_entry(&self) -> bool {
-        true
-    }
 }

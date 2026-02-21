@@ -122,8 +122,4 @@ impl Plugin for Ssh {
             })
             .collect()
     }
-
-    fn has_entry(&self) -> bool {
-        true
-    }
 }
