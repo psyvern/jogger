@@ -1496,6 +1496,18 @@ impl AsyncComponent for AppModel {
                 }
             }
             AppMsg::Reload => {
+                let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
+
+                let config = base_dirs.place_config_file("config.toml").unwrap();
+                let config: AppConfig = if std::fs::exists(&config).unwrap_or(false) {
+                    let content = std::fs::read_to_string(&config).unwrap();
+                    toml::from_str(&content).unwrap()
+                } else {
+                    Default::default()
+                };
+
+                self.config = config;
+
                 self.context = Arc::new(RwLock::new(Context::default()));
 
                 self.plugins.write().clear();
@@ -1513,18 +1525,6 @@ impl AsyncComponent for AppModel {
                 }
 
                 sender.input(AppMsg::ScrollToStart);
-
-                let base_dirs = BaseDirectories::with_prefix("jogger").unwrap();
-
-                let config = base_dirs.place_config_file("config.toml").unwrap();
-                let config: AppConfig = if std::fs::exists(&config).unwrap_or(false) {
-                    let content = std::fs::read_to_string(&config).unwrap();
-                    toml::from_str(&content).unwrap()
-                } else {
-                    Default::default()
-                };
-
-                self.config = config;
 
                 load_css(&base_dirs, &self.config, &self.css_provider);
             }
