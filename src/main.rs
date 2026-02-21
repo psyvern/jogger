@@ -135,15 +135,14 @@ impl FactoryComponent for GridEntryComponent {
 
     view! {
         #[root]
-        Button {
-            set_hexpand: true,
-            set_vexpand: true,
+        ListBoxRow {
+            set_expand: true,
             #[watch]
             set_class_active: ("selected", self.selected),
             set_cursor_from_name: Some("pointer"),
             // set_tooltip: &self.entry.name.text,
 
-            connect_clicked[sender, index] => move |_| {
+            connect_activate[sender, index] => move |_| {
                 sender.output(EntryOutput::Activate(index.clone())).unwrap();
             },
 
@@ -990,8 +989,7 @@ impl AsyncComponent for AppModel {
 
                                 set_row_homogeneous: true,
                                 set_column_homogeneous: true,
-                                set_hexpand: true,
-                                set_vexpand: true,
+                                set_expand: true,
                             },
                         }
                     } else {
