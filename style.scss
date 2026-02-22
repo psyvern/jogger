@@ -32,7 +32,8 @@ window.dragging {
     opacity: 0.25;
 }
 
-row {
+grid>*,
+list>* {
     border-radius: 12px;
     border-width: 2px;
     border-style: solid;

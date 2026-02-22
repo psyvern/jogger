@@ -84,8 +84,9 @@ enum EntryMsg {
 
 #[derive(Debug)]
 enum EntryOutput {
-    Activate(DynamicIndex),
+    Activate,
     ButtonDown(DynamicIndex, bool),
+    StopGesture,
     DragStart,
     DragEnd,
 }
@@ -93,12 +94,13 @@ enum EntryOutput {
 impl From<EntryOutput> for AppMsg {
     fn from(value: EntryOutput) -> Self {
         match value {
-            EntryOutput::Activate(index) => AppMsg::Activate(index.current_index()),
+            EntryOutput::Activate => AppMsg::GestureRelease,
             EntryOutput::DragStart => AppMsg::SetDragging(true),
             EntryOutput::DragEnd => AppMsg::SetDragging(false),
             EntryOutput::ButtonDown(index, secondary) => {
-                AppMsg::SelectEntry(index.current_index(), secondary)
+                AppMsg::GestureStart(index.current_index(), secondary)
             }
+            EntryOutput::StopGesture => AppMsg::GestureStop,
         }
     }
 }
@@ -135,20 +137,25 @@ impl FactoryComponent for GridEntryComponent {
 
     view! {
         #[root]
-        ListBoxRow {
+        GBox {
             set_expand: true,
+            set_orientation: Vertical,
             #[watch]
             set_class_active: ("selected", self.selected),
             set_cursor_from_name: Some("pointer"),
             // set_tooltip: &self.entry.name.text,
 
-            connect_activate[sender, index] => move |_| {
-                sender.output(EntryOutput::Activate(index.clone())).unwrap();
-            },
-
             add_controller = GestureClick {
                 connect_pressed[sender, index] => move |_, _, _, _| {
                     sender.output(EntryOutput::ButtonDown(index.clone(), false)).unwrap();
+                },
+
+                connect_stopped[sender] => move |_| {
+                    sender.output(EntryOutput::StopGesture).unwrap();
+                },
+
+                connect_released[sender] => move |_, _, _, _| {
+                    sender.output(EntryOutput::Activate).unwrap();
                 },
             },
 
@@ -160,49 +167,45 @@ impl FactoryComponent for GridEntryComponent {
                 },
             },
 
-            GBox {
-                set_orientation: Vertical,
-
-                append = match &self.entry.icon {
-                    EntryIcon::Name(value) => {
-                        Image {
-                            #[watch]
-                            set_icon_name: Some(value),
-                            set_pixel_size: 48,
-                            set_vexpand: true,
-                            set_valign: Align::End,
-                            add_css_class: "icon",
-                        }
-                    },
-                    EntryIcon::Path(value) => {
-                        Image {
-                            #[watch]
-                            set_from_file: Some(value),
-                            set_pixel_size: 48,
-                            set_vexpand: true,
-                            set_valign: Align::End,
-                            add_css_class: "icon",
-                        }
-                    },
-                    EntryIcon::Text(value) => {
-                        Label {
-                            #[watch]
-                            set_label: &value,
-                            add_css_class: "icon",
-                        }
-                    },
-                    EntryIcon::None => Image::new(),
+            append = match &self.entry.icon {
+                EntryIcon::Name(value) => {
+                    Image {
+                        #[watch]
+                        set_icon_name: Some(value),
+                        set_pixel_size: 48,
+                        set_vexpand: true,
+                        set_valign: Align::End,
+                        add_css_class: "icon",
+                    }
                 },
-
-                Label {
-                    set_label: &self.entry.name.text,
-                    set_ellipsize: EllipsizeMode::End,
-                    set_lines: 2,
-                    set_vexpand: true,
-                    set_justify: Justification::Center,
-                    add_css_class: "grid_name",
+                EntryIcon::Path(value) => {
+                    Image {
+                        #[watch]
+                        set_from_file: Some(value),
+                        set_pixel_size: 48,
+                        set_vexpand: true,
+                        set_valign: Align::End,
+                        add_css_class: "icon",
+                    }
                 },
-            }
+                EntryIcon::Text(value) => {
+                    Label {
+                        #[watch]
+                        set_label: &value,
+                        add_css_class: "icon",
+                    }
+                },
+                EntryIcon::None => Image::new(),
+            },
+
+            Label {
+                set_label: &self.entry.name.text,
+                set_ellipsize: EllipsizeMode::End,
+                set_lines: 2,
+                set_vexpand: true,
+                set_justify: Justification::Center,
+                add_css_class: "grid_name",
+            },
         }
     }
 
@@ -287,13 +290,17 @@ impl FactoryComponent for ListEntryComponent {
             set_class_active: ("selected", self.selected),
             set_cursor_from_name: Some("pointer"),
 
-            connect_activate[sender, index] => move |_| {
-                sender.output(EntryOutput::Activate(index.clone())).unwrap()
+            connect_activate[sender] => move |_| {
+                sender.output(EntryOutput::Activate).unwrap()
             },
 
             add_controller = GestureClick {
                 connect_pressed[sender, index] => move |_, _, _, _| {
                     sender.output(EntryOutput::ButtonDown(index.clone(), false)).unwrap();
+                },
+
+                connect_stopped[sender] => move |_| {
+                    sender.output(EntryOutput::StopGesture).unwrap();
                 },
             },
 
@@ -468,7 +475,10 @@ enum AppMsg {
     Shortcut(Key, ModifierType),
     ClearPrefix,
     Move(MoveDirection),
-    SelectEntry(usize, bool),
+    SelectEntry(usize),
+    GestureStart(usize, bool),
+    GestureStop,
+    GestureRelease,
     ScrollToSelected,
     ScrollToStart,
     Escape,
@@ -557,6 +567,7 @@ struct AppModel {
     plugins: Arc<RwLock<Vec<Box<dyn Plugin>>>>,
     selected_plugin: Option<usize>,
     selected_entry: usize,
+    pressing_entry: bool,
     list_entries: FactoryVecDeque<ListEntryComponent>,
     grid_entries: FactoryVecDeque<GridEntryComponent>,
     grid_size: usize,
@@ -1127,6 +1138,7 @@ impl AsyncComponent for AppModel {
                                     let selected_entry = model.selected_entry;
 
                                     let button = widget_for_keybind(&x.0.description(), x.1, x.2);
+                                    button.set_class_active("selected", model.pressing_entry);
                                     button.connect_clicked(move |_| {
                                         sender.input(AppMsg::Activate(selected_entry))
                                     });
@@ -1183,6 +1195,7 @@ impl AsyncComponent for AppModel {
             plugins: Arc::new(RwLock::new(Vec::new())),
             selected_plugin: None,
             selected_entry: 0,
+            pressing_entry: false,
             list_entries,
             grid_entries,
             grid_size,
@@ -1642,10 +1655,10 @@ impl AsyncComponent for AppModel {
                 };
 
                 if new != self.selected_entry {
-                    sender.input(AppMsg::SelectEntry(new, false));
+                    sender.input(AppMsg::SelectEntry(new));
                 }
             }
-            AppMsg::SelectEntry(index, secondary) => {
+            AppMsg::SelectEntry(index) => {
                 if self.use_grid() {
                     self.grid_entries
                         .try_send(self.selected_entry, EntryMsg::Unselect);
@@ -1669,10 +1682,25 @@ impl AsyncComponent for AppModel {
                 }
 
                 self.selected_entry = index;
+            }
+            AppMsg::GestureStart(index, secondary) => {
+                sender.input(AppMsg::SelectEntry(index));
 
                 if secondary {
                     sender.input(AppMsg::ToggleActions);
+                } else {
+                    self.pressing_entry = true;
                 }
+            }
+            AppMsg::GestureStop => {
+                self.pressing_entry = false;
+            }
+            AppMsg::GestureRelease => {
+                if self.pressing_entry {
+                    sender.input(AppMsg::ActivateSelected);
+                }
+
+                self.pressing_entry = false;
             }
             AppMsg::ActivateSelected => {
                 if let Some(action) = self.selected_action {
