@@ -12,6 +12,7 @@ use gtk::pango::Attribute;
 use gtk::pango::Color;
 use gtk::pango::FontDescription;
 
+use crate::utils::IteratorExt;
 use crate::xdg_database::XdgAppDatabase;
 
 pub trait Plugin: Debug + Send + Sync {
@@ -159,6 +160,34 @@ impl FormattedString {
         }
     }
 
+    pub fn from_indices(string: &str, indices: impl IntoIterator<Item = usize>) -> Self {
+        Self {
+            text: string.to_owned(),
+            ranges: indices
+                .into_iter()
+                .ranges()
+                .map(|x| (FormatStyle::Highlight, x))
+                .collect(),
+        }
+    }
+
+    pub fn from_indices_with_prefix(
+        string: &str,
+        prefix: char,
+        indices: impl IntoIterator<Item = usize>,
+    ) -> Self {
+        let offset = prefix.len_utf8();
+
+        Self {
+            text: format!("{prefix}{string}"),
+            ranges: indices
+                .into_iter()
+                .ranges()
+                .map(|x| (FormatStyle::Highlight, (x.start + offset)..(x.end + offset)))
+                .collect(),
+        }
+    }
+
     pub fn to_pango_escaped(&self) -> String {
         fn escape(text: &str) -> String {
             let mut result = String::new();
@@ -235,6 +264,15 @@ impl Ord for FormattedString {
     }
 }
 
+impl<S: Into<String>> From<S> for FormattedString {
+    fn from(value: S) -> Self {
+        Self {
+            text: value.into(),
+            ranges: vec![],
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Entry {
     pub name: FormattedString,
@@ -245,6 +283,7 @@ pub struct Entry {
     pub actions: Vec<(EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType)>,
     pub id: String,
     pub drag_file: Option<PathBuf>,
+    pub score: u64,
 }
 
 #[derive(Clone, Debug, Default)]

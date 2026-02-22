@@ -8,6 +8,7 @@ pub mod xdg_database;
 use dbus::channel::MatchingReceiver;
 use dbus::message::MatchRule;
 use dbus_crossroads::Crossroads;
+use fuzzy_matcher::FuzzyMatcher;
 use gtk::cairo::Region;
 use gtk::gdk::prelude::SurfaceExt;
 use gtk::gdk::{ContentProvider, Display, FileList, Key, ModifierType};
@@ -392,7 +393,16 @@ impl FactoryComponent for ListEntryComponent {
                                 None => {
                                     GBox {}
                                 }
-                            }
+                            },
+
+                            // Label {
+                            //     #[watch]
+                            //     set_label: &format!("{}", self.entry.score),
+                            //     set_ellipsize: EllipsizeMode::End,
+                            //     set_halign: Align::End,
+                            //     add_css_class: "tag",
+                            //     set_lines: 1,
+                            // },
                         },
 
                         match &self.entry.description {
@@ -1350,7 +1360,7 @@ impl AsyncComponent for AppModel {
                             .map(|(a, (b, c))| (a, b, c))
                             .collect_vec();
 
-                        let entries = {
+                        let mut entries = {
                             match selected_plugin.and_then(|i| plugins.get(i)) {
                                 None => {
                                     let plugin = plugins.iter().find(|(_, plugin, _)| {
@@ -1371,30 +1381,15 @@ impl AsyncComponent for AppModel {
                                         plugins
                                             .iter()
                                             .filter(|(_, x, _)| !x.default)
-                                            .filter(|(_, _, x)| {
-                                                x.name()
-                                                    .to_lowercase()
-                                                    .contains(&query.to_lowercase())
-                                            })
-                                            .map(|(i, _, x)| {
-                                                (
+                                            .flat_map(|(i, _, x)| {
+                                                Some((
                                                     *i,
-                                                    Entry {
-                                                        name: FormattedString::plain(x.name()),
-                                                        tag: None,
-                                                        description: None,
-                                                        icon: EntryIcon::from(
-                                                            x.icon().map(str::to_owned),
-                                                        ),
-                                                        small_icon: EntryIcon::None,
-                                                        actions: vec![
-                                                            EntryAction::ChangePlugin(Some(*i))
-                                                                .into(),
-                                                        ],
-                                                        id: String::new(),
-                                                        ..Default::default()
-                                                    },
-                                                )
+                                                    plugin_entry_from_query(
+                                                        *i,
+                                                        x.as_ref(),
+                                                        &query,
+                                                    )?,
+                                                ))
                                             })
                                             .chain(
                                                 plugins
@@ -1418,6 +1413,8 @@ impl AsyncComponent for AppModel {
                                     .collect_vec(),
                             }
                         };
+
+                        entries.sort_by(|a, b| b.1.score.cmp(&a.1.score));
 
                         if !stopped.get() {
                             sender.input(AppMsg::SearchResults(entries));
@@ -1816,6 +1813,34 @@ fn load_css(base: &BaseDirectories, config: &AppConfig, provider: &CssProvider) 
     .unwrap_or_default();
 
     provider.load_from_string(&style);
+}
+
+fn plugin_entry_from_query(index: usize, x: &dyn Plugin, query: &str) -> Option<Entry> {
+    let matcher = fuzzy_matcher::skim::SkimMatcherV2::default().ignore_case();
+
+    let (score, indices) =
+        matcher.fuzzy_indices(&x.name().to_lowercase(), &query.to_lowercase())?;
+
+    let score = score.try_into().ok()?;
+    // let description = x.description().as_ref().and_then(|x| {
+    //     matcher
+    //         .fuzzy_indices(x, query)
+    //         .map(|x| (Kind::Description, x.0 * 5 / 4, x.1))
+    // });
+    // let keywords = x.keywords().iter().enumerate().flat_map(|(i, x)| {
+    //     matcher
+    //         .fuzzy_indices(x, query)
+    //         .map(|x| (Kind::Keyword(i), x.0, x.1))
+    // });
+
+    Some(Entry {
+        name: FormattedString::from_indices(x.name(), indices),
+        description: Some("Plugin".into()),
+        icon: EntryIcon::from(x.icon().map(str::to_owned)),
+        actions: vec![EntryAction::ChangePlugin(Some(index)).into()],
+        score,
+        ..Default::default()
+    })
 }
 
 fn start() {

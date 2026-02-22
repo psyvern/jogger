@@ -10,8 +10,7 @@ use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
-use crate::interface::{Context, FormatStyle, FormattedString};
-use crate::utils::IteratorExt;
+use crate::interface::{Context, FormattedString};
 use crate::xdg_database::ExecParser;
 use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
 
@@ -158,96 +157,92 @@ impl DesktopEntry {
         query: &str,
         matcher: &SkimMatcherV2,
         desktop_file_opener: &str,
-    ) -> Option<(u8, i64, Entry)> {
+    ) -> Option<(u8, Entry)> {
         let name = matcher
             .fuzzy_indices(&self.name, query)
-            .map(|x| (Kind::Name, x.0 * 4 / 3, x.1));
+            .map(|x| (Kind::Name, x));
         let description = self.description.as_ref().and_then(|x| {
             matcher
                 .fuzzy_indices(x, query)
-                .map(|x| (Kind::Description, x.0 * 5 / 4, x.1))
+                .map(|x| (Kind::Description, x))
         });
         let categories = self.categories.iter().enumerate().flat_map(|(i, x)| {
             matcher
                 .fuzzy_indices(x, query)
-                .map(|x| (Kind::Category(i), x.0, x.1))
+                .map(|x| (Kind::Category(i), x))
         });
         let keywords = self.keywords.iter().enumerate().flat_map(|(i, x)| {
             matcher
                 .fuzzy_indices(x, query)
-                .map(|x| (Kind::Keyword(i), x.0, x.1))
+                .map(|x| (Kind::Keyword(i), x))
         });
 
         itertools::chain!(name, description, categories, keywords)
-            .max_by_key(|x| x.1)
-            .map(|(kind, score, indices)| {
+            .max_by_key(|x| x.1.0)
+            .and_then(|(kind, (score, indices))| {
+                let score = score.try_into().ok()?;
                 let actions = self.get_actions(desktop_file_opener);
 
-                match kind {
+                Some(match kind {
                     Kind::Name => (
                         7,
-                        score,
                         Entry {
-                            name: format_indices(&self.name, indices),
-                            tag: None,
+                            name: FormattedString::from_indices(&self.name, indices),
                             description: self.description.as_ref().map(FormattedString::plain),
                             icon: EntryIcon::from(self.icon.clone()),
-                            small_icon: EntryIcon::None,
                             actions,
-                            id: "".to_owned(),
+                            score,
                             ..Default::default()
                         },
                     ),
                     Kind::Description => (
                         6,
-                        score,
                         Entry {
                             name: FormattedString::plain(&self.name),
                             tag: None,
                             description: self
                                 .description
                                 .as_ref()
-                                .map(|x| format_indices(x, indices)),
+                                .map(|x| FormattedString::from_indices(x, indices)),
                             icon: EntryIcon::from(self.icon.clone()),
-                            small_icon: EntryIcon::None,
                             actions,
-                            id: "".to_owned(),
+                            score,
                             ..Default::default()
                         },
                     ),
                     Kind::Keyword(i) => (
                         5,
-                        score,
                         Entry {
                             name: FormattedString::plain(&self.name),
-                            tag: Some(format_indices_with_prefix(&self.keywords[i], '#', indices)),
+                            tag: Some(FormattedString::from_indices_with_prefix(
+                                &self.keywords[i],
+                                '#',
+                                indices,
+                            )),
                             description: self.description.as_ref().map(FormattedString::plain),
                             icon: EntryIcon::from(self.icon.clone()),
-                            small_icon: EntryIcon::None,
                             actions,
-                            id: "".to_owned(),
+                            score,
                             ..Default::default()
                         },
                     ),
                     Kind::Category(i) => (
                         4,
-                        score,
                         Entry {
                             name: FormattedString::plain(&self.name),
-                            tag: Some(format_indices_with_prefix(
+                            tag: Some(FormattedString::from_indices_with_prefix(
                                 &self.categories[i],
                                 '@',
                                 indices,
                             )),
                             description: self.description.as_ref().map(FormattedString::plain),
                             icon: EntryIcon::from(self.icon.clone()),
-                            small_icon: EntryIcon::None,
                             actions,
-                            id: "".to_owned(),
+                            score,
                             ..Default::default()
                         },
                     ),
-                }
+                })
             })
     }
 
@@ -314,107 +309,131 @@ impl DesktopEntry {
         action: &DesktopEntryAction,
         query: &str,
         matcher: &SkimMatcherV2,
-    ) -> Option<(u8, i64, Entry)> {
+    ) -> Option<(u8, Entry)> {
         let name = matcher
             .fuzzy_indices(&action.name, query)
-            .map(|x| (Kind::Name, x.0 * 4 / 3, x.1));
+            .map(|x| (Kind::Name, x));
         let entry_name = matcher
             .fuzzy_indices(&self.name, query)
-            .map(|x| (Kind::Description, x.0 * 5 / 4, x.1));
+            .map(|x| (Kind::Description, x));
         let categories = self.categories.iter().enumerate().flat_map(|(i, x)| {
             matcher
                 .fuzzy_indices(x, query)
-                .map(|x| (Kind::Category(i), x.0, x.1))
+                .map(|x| (Kind::Category(i), x))
         });
         let keywords = self.keywords.iter().enumerate().flat_map(|(i, x)| {
             matcher
                 .fuzzy_indices(x, query)
-                .map(|x| (Kind::Keyword(i), x.0, x.1))
+                .map(|x| (Kind::Keyword(i), x))
         });
 
         itertools::chain!(name, entry_name, categories, keywords)
-            .max_by_key(|x| x.1)
-            .map(|(kind, score, indices)| match kind {
-                Kind::Name => (
-                    3,
-                    score,
-                    Entry {
-                        name: format_indices(&action.name, indices),
-                        tag: None,
-                        description: Some(FormattedString::plain(&self.name)),
-                        icon: EntryIcon::from(self.icon.clone()),
-                        small_icon: EntryIcon::Name(
-                            action.icon.clone().unwrap_or("emblem-added".into()),
-                        ),
-                        actions: vec![
-                            EntryAction::Open(self.id.clone(), Some(action.id.clone()), None, None)
+            .max_by_key(|x| x.1.0)
+            .and_then(|(kind, (score, indices))| {
+                let score = score.try_into().ok()?;
+
+                Some(match kind {
+                    Kind::Name => (
+                        3,
+                        Entry {
+                            name: FormattedString::from_indices(&action.name, indices),
+                            tag: None,
+                            description: Some(FormattedString::plain(&self.name)),
+                            icon: EntryIcon::from(self.icon.clone()),
+                            small_icon: EntryIcon::Name(
+                                action.icon.clone().unwrap_or("emblem-added".into()),
+                            ),
+                            actions: vec![
+                                EntryAction::Open(
+                                    self.id.clone(),
+                                    Some(action.id.clone()),
+                                    None,
+                                    None,
+                                )
                                 .into(),
-                        ],
-                        id: "".to_owned(),
-                        ..Default::default()
-                    },
-                ),
-                Kind::Description => (
-                    2,
-                    score,
-                    Entry {
-                        name: FormattedString::plain(&action.name),
-                        tag: None,
-                        description: Some(format_indices(&self.name, indices)),
-                        icon: EntryIcon::from(self.icon.clone()),
-                        small_icon: EntryIcon::Name(
-                            action.icon.clone().unwrap_or("emblem-added".into()),
-                        ),
-                        actions: vec![
-                            EntryAction::Open(self.id.clone(), Some(action.id.clone()), None, None)
+                            ],
+                            score,
+                            ..Default::default()
+                        },
+                    ),
+                    Kind::Description => (
+                        2,
+                        Entry {
+                            name: FormattedString::plain(&action.name),
+                            tag: None,
+                            description: Some(FormattedString::from_indices(&self.name, indices)),
+                            icon: EntryIcon::from(self.icon.clone()),
+                            small_icon: EntryIcon::Name(
+                                action.icon.clone().unwrap_or("emblem-added".into()),
+                            ),
+                            actions: vec![
+                                EntryAction::Open(
+                                    self.id.clone(),
+                                    Some(action.id.clone()),
+                                    None,
+                                    None,
+                                )
                                 .into(),
-                        ],
-                        id: "".to_owned(),
-                        ..Default::default()
-                    },
-                ),
-                Kind::Keyword(i) => (
-                    1,
-                    score,
-                    Entry {
-                        name: FormattedString::plain(&action.name),
-                        tag: Some(format_indices_with_prefix(&self.keywords[i], '#', indices)),
-                        description: Some(FormattedString::plain(&self.name)),
-                        icon: EntryIcon::from(self.icon.clone()),
-                        small_icon: EntryIcon::Name(
-                            action.icon.clone().unwrap_or("emblem-added".into()),
-                        ),
-                        actions: vec![
-                            EntryAction::Open(self.id.clone(), Some(action.id.clone()), None, None)
+                            ],
+                            score,
+                            ..Default::default()
+                        },
+                    ),
+                    Kind::Keyword(i) => (
+                        1,
+                        Entry {
+                            name: FormattedString::plain(&action.name),
+                            tag: Some(FormattedString::from_indices_with_prefix(
+                                &self.keywords[i],
+                                '#',
+                                indices,
+                            )),
+                            description: Some(FormattedString::plain(&self.name)),
+                            icon: EntryIcon::from(self.icon.clone()),
+                            small_icon: EntryIcon::Name(
+                                action.icon.clone().unwrap_or("emblem-added".into()),
+                            ),
+                            actions: vec![
+                                EntryAction::Open(
+                                    self.id.clone(),
+                                    Some(action.id.clone()),
+                                    None,
+                                    None,
+                                )
                                 .into(),
-                        ],
-                        id: "".to_owned(),
-                        ..Default::default()
-                    },
-                ),
-                Kind::Category(i) => (
-                    0,
-                    score,
-                    Entry {
-                        name: FormattedString::plain(&action.name),
-                        tag: Some(format_indices_with_prefix(
-                            &self.categories[i],
-                            '@',
-                            indices,
-                        )),
-                        description: Some(FormattedString::plain(&self.name)),
-                        icon: EntryIcon::from(self.icon.clone()),
-                        small_icon: EntryIcon::Name(
-                            action.icon.clone().unwrap_or("emblem-added".into()),
-                        ),
-                        actions: vec![
-                            EntryAction::Open(self.id.clone(), Some(action.id.clone()), None, None)
+                            ],
+                            score,
+                            ..Default::default()
+                        },
+                    ),
+                    Kind::Category(i) => (
+                        0,
+                        Entry {
+                            name: FormattedString::plain(&action.name),
+                            tag: Some(FormattedString::from_indices_with_prefix(
+                                &self.categories[i],
+                                '@',
+                                indices,
+                            )),
+                            description: Some(FormattedString::plain(&self.name)),
+                            icon: EntryIcon::from(self.icon.clone()),
+                            small_icon: EntryIcon::Name(
+                                action.icon.clone().unwrap_or("emblem-added".into()),
+                            ),
+                            actions: vec![
+                                EntryAction::Open(
+                                    self.id.clone(),
+                                    Some(action.id.clone()),
+                                    None,
+                                    None,
+                                )
                                 .into(),
-                        ],
-                        id: "".to_owned(),
-                        ..Default::default()
-                    },
-                ),
+                            ],
+                            score,
+                            ..Default::default()
+                        },
+                    ),
+                })
             })
     }
 
@@ -445,29 +464,6 @@ impl DesktopEntry {
     pub fn program(&self) -> String {
         let ss = self.parse_exec(&[], false);
         ss.into_iter().next().unwrap_or_default()
-    }
-}
-
-fn format_indices(string: &str, indices: Vec<usize>) -> FormattedString {
-    FormattedString {
-        text: string.to_owned(),
-        ranges: indices
-            .into_iter()
-            .ranges()
-            .map(|x| (FormatStyle::Highlight, x))
-            .collect(),
-    }
-}
-
-fn format_indices_with_prefix(string: &str, prefix: char, indices: Vec<usize>) -> FormattedString {
-    let offset = prefix.len_utf8();
-    FormattedString {
-        text: format!("{prefix}{string}"),
-        ranges: indices
-            .into_iter()
-            .ranges()
-            .map(|x| (FormatStyle::Highlight, (x.start + offset)..(x.end + offset)))
-            .collect(),
     }
 }
 
@@ -578,6 +574,7 @@ impl Plugin for Applications {
                 .app_map
                 .values()
                 .filter(|x| x.display)
+                .sorted_by_key(|x| x.id.clone())
                 .flat_map(|entry| {
                     entry
                         .actions
@@ -585,10 +582,9 @@ impl Plugin for Applications {
                         .flat_map(|action| entry.get_action_score(action, query, &matcher))
                         .chain(entry.get_score(query, &matcher, &self.desktop_file_opener))
                 })
-                .sorted_by_cached_key(|(a, b, _)| (*b, *a))
-                .rev()
+                .sorted_by(|a, b| b.1.score.cmp(&a.1.score).then(b.0.cmp(&a.0)))
                 .take(20)
-                .map(|(_, _, x)| x)
+                .map(|(_, x)| x)
                 .collect()
         }
     }

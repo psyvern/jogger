@@ -57,7 +57,7 @@ impl Files {
                                     EntryAction::Write {
                                         text: if x == "/" { x } else { x + "/" },
                                         description: "Navigate".into(),
-                                        icon: "go-parent-folder".into(),
+                                        icon: "folder_open".into(),
                                     }
                                     .into(),
                                     (
@@ -210,7 +210,7 @@ impl Files {
                     EntryAction::Write {
                         text: reduce_tilde(&path, &self.home_dir) + "/",
                         description: "Navigate".into(),
-                        icon: "go-parent-folder".into(),
+                        icon: "folder_open".into(),
                     }
                     .into(),
                     (
@@ -290,8 +290,8 @@ impl Files {
 
                 vec
             },
-            id: "".to_owned(),
             drag_file: Some(path),
+            ..Default::default()
         })
     }
 
