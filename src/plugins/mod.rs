@@ -7,3 +7,4 @@ pub(crate) mod hyprland;
 pub(crate) mod math;
 pub(crate) mod ssh;
 pub(crate) mod unicode;
+pub(crate) mod web;

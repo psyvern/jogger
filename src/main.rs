@@ -519,6 +519,7 @@ enum PluginType {
     Ssh,
     Unicode,
     Emojis,
+    Web,
 }
 
 impl PluginType {
@@ -533,6 +534,7 @@ impl PluginType {
             Self::Ssh => Box::new(plugins::ssh::Ssh::new(context)),
             Self::Unicode => Box::new(plugins::unicode::Unicode::new(context)),
             Self::Emojis => Box::new(plugins::emoji::Emojis::new(context)),
+            Self::Web => Box::new(plugins::web::Web::new(context)),
         }
     }
 }
