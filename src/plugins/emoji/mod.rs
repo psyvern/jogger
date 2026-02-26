@@ -7,12 +7,11 @@ use gtk::gdk::Key;
 use gtk::gdk::ModifierType;
 use itertools::Itertools;
 
+use crate::interface::EntryAction;
 use crate::plugins::emoji::data::EMOJIS;
 use crate::plugins::emoji::data::GROUPS;
 
-use crate::interface::{
-    Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString, Plugin,
-};
+use crate::interface::{Context, Entry, EntryIcon, FormatStyle, FormattedString, Plugin};
 
 #[derive(Debug)]
 pub struct Emojis {}
@@ -60,7 +59,12 @@ impl Plugin for Emojis {
                             tag: Some(FormattedString::plain(x.version.to_string())),
                             description: Some(FormattedString::plain(x.attributes.join(", "))),
                             icon: EntryIcon::Text(x.codepoints.to_owned()),
-                            actions: vec![EntryAction::Copy(x.codepoints.to_owned(), None).into()],
+                            actions: vec![EntryAction {
+                                icon: "edit-copy".into(),
+                                name: "Copy".into(),
+                                function: EntryAction::copy(x.codepoints),
+                                ..Default::default()
+                            }],
                             ..Default::default()
                         })
                         .collect();
@@ -135,19 +139,27 @@ impl Plugin for Emojis {
                     icon: EntryIcon::Text(first.codepoints.to_owned()),
                     actions: if x.variants.len() > 1 {
                         vec![
-                            EntryAction::Copy(first.codepoints.to_owned(), None).into(),
-                            (
-                                EntryAction::Write {
-                                    text: first.codepoints.to_owned(),
-                                    description: "Variants...".into(),
-                                    icon: "edit-paste-style".into(),
-                                },
-                                Key::Return,
-                                ModifierType::SHIFT_MASK,
-                            ),
+                            EntryAction {
+                                icon: "edit-copy".into(),
+                                name: "Copy".into(),
+                                function: EntryAction::copy(first.codepoints),
+                                ..Default::default()
+                            },
+                            EntryAction {
+                                icon: "edit-paste-style".into(),
+                                name: "Variants...".into(),
+                                key: Key::Return,
+                                modifier: ModifierType::SHIFT_MASK,
+                                function: EntryAction::write(first.codepoints),
+                            },
                         ]
                     } else {
-                        vec![EntryAction::Copy(first.codepoints.to_owned(), None).into()]
+                        vec![EntryAction {
+                            icon: "edit-copy".into(),
+                            name: "Copy".into(),
+                            function: EntryAction::copy(first.codepoints),
+                            ..Default::default()
+                        }]
                     },
                     ..Default::default()
                 }

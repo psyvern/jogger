@@ -55,67 +55,68 @@ impl From<&HyprlandClient> for Entry {
                     .unwrap_or_else(|| value.class.clone()),
             )),
             icon: EntryIcon::Name(value.path.clone().unwrap_or("image-missing".to_owned())),
-            small_icon: EntryIcon::None,
             actions: vec![
-                EntryAction::Command {
-                    name: "Focus window".to_owned(),
-                    icon: Some("window".into()),
-                    command: "hyprctl".to_owned(),
-                    args: vec![
-                        "dispatch".to_owned(),
-                        "focuswindow".to_owned(),
-                        format!("address:{}", value.address),
-                    ],
-                    path: None,
-                }
-                .into(),
-                (
-                    EntryAction::Command {
-                        name: "Move to current workspace".to_owned(),
-                        icon: Some("edit-move".into()),
-                        command: "hyprctl".to_owned(),
-                        args: vec![
+                EntryAction {
+                    icon: "window".into(),
+                    name: "Focus window".into(),
+                    function: EntryAction::command(
+                        "hyprctl".into(),
+                        vec![
+                            "dispatch".into(),
+                            "focuswindow".into(),
+                            format!("address:{}", value.address),
+                        ],
+                        None,
+                    ),
+                    ..Default::default()
+                },
+                EntryAction {
+                    icon: "edit-move".into(),
+                    name: "Move to current workspace".into(),
+                    function: EntryAction::command(
+                        "hyprctl".to_owned(),
+                        vec![
                             "dispatch".to_owned(),
                             "movetoworkspace".to_owned(),
                             format!("+0,address:{}", value.address),
                         ],
-                        path: None,
-                    },
-                    Key::Return,
-                    ModifierType::SHIFT_MASK,
-                ),
-                (
-                    EntryAction::Command {
-                        name: "Toggle fullscreen".to_owned(),
-                        icon: Some("view-fullscreen".into()),
-                        command: "hyprctl".to_owned(),
-                        args: vec![
-                            "--batch".to_owned(),
+                        None,
+                    ),
+                    key: Key::Return,
+                    modifier: ModifierType::SHIFT_MASK,
+                },
+                EntryAction {
+                    icon: "view-fullscreen".into(),
+                    name: "Toggle fullscreen".into(),
+                    function: EntryAction::command(
+                        "hyprctl".into(),
+                        vec![
+                            "--batch".into(),
                             format!(
                                 "dispatch focuswindow address:{} ; dispatch fullscreen 0",
                                 value.address
                             ),
                         ],
-                        path: None,
-                    },
-                    Key::f,
-                    ModifierType::CONTROL_MASK,
-                ),
-                (
-                    EntryAction::Command {
-                        name: "Close window".to_owned(),
-                        icon: Some("window-close".into()),
-                        command: "hyprctl".to_owned(),
-                        args: vec![
-                            "dispatch".to_owned(),
-                            "closewindow".to_owned(),
+                        None,
+                    ),
+                    key: Key::f,
+                    modifier: ModifierType::CONTROL_MASK,
+                },
+                EntryAction {
+                    icon: "window-close".into(),
+                    name: "Close window".into(),
+                    function: EntryAction::command(
+                        "hyprctl".into(),
+                        vec![
+                            "dispatch".into(),
+                            "closewindow".into(),
                             format!("address:{}", value.address),
                         ],
-                        path: None,
-                    },
-                    Key::q,
-                    ModifierType::CONTROL_MASK,
-                ),
+                        None,
+                    ),
+                    key: Key::q,
+                    modifier: ModifierType::CONTROL_MASK,
+                },
             ],
             id: value.address.to_string(),
             ..Default::default()

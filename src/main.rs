@@ -20,7 +20,6 @@ use gtk::{
     CenterBox, CssProvider, DragSource, EventControllerKey, GestureClick, IconTheme, Orientation,
     PropagationPhase, Separator,
 };
-use hyprland::dispatch::{Dispatch, DispatchType};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use relm4::prelude::{AsyncComponent, AsyncComponentParts};
@@ -45,7 +44,7 @@ use gtk::{
     },
 };
 use gtk_layer_shell::{KeyboardMode, Layer, LayerShell};
-use interface::{Entry, EntryAction, Plugin};
+use interface::{Entry, Plugin};
 use relm4::{
     Component, ComponentController, Controller, FactorySender, RelmApp, RelmWidgetExt,
     factory::{Position, positions::GridPosition},
@@ -54,8 +53,7 @@ use relm4::{
 use search_entry::SearchEntryModel;
 
 use crate::color::PangoColor;
-use crate::interface::{Context, EntryIcon, FormattedString};
-use crate::utils::CommandExt;
+use crate::interface::{ActionResult, Context, EntryAction, EntryIcon, FormattedString};
 
 trait FactoryVecDequeExt<T> {
     type Input;
@@ -473,7 +471,6 @@ enum AppMsg {
     ActivateSelected,
     ActivateSelectedWithAction(usize),
     Shortcut(Key, ModifierType),
-    ClearPrefix,
     Move(MoveDirection),
     SelectEntry(usize),
     GestureStart(usize, bool),
@@ -490,6 +487,7 @@ enum AppMsg {
     Reload,
     SearchResults(Vec<(usize, Entry)>),
     PluginLoaded(Box<dyn Plugin>),
+    SetPlugin(Option<usize>),
     SetDragging(bool),
     ToggleLock,
 }
@@ -599,116 +597,13 @@ impl AppModel {
         }
     }
 
-    fn execute_action(&mut self, action: &EntryAction, sender: AsyncComponentSender<Self>) {
-        match action {
-            EntryAction::Close => sender.input(AppMsg::Hide),
-            EntryAction::Write { text, .. } => {
-                self.search_entry.emit(text.clone());
-            }
-            EntryAction::ChangePlugin(plugin) => {
-                self.selected_plugin = *plugin;
-                self.search_entry.emit(String::new());
-            }
-            EntryAction::Open(app, action, path, _) => {
-                let context = self.context.read();
-                if let Some(app) = context.apps.app_map.get(app) {
-                    let args = match path {
-                        Some(path) => vec![path.to_string_lossy().to_string()],
-                        None => vec![],
-                    };
-                    if match action {
-                        Some(action) => context.apps.launch_action(app, action, &args),
-                        None => context.apps.launch(app, &args),
-                    } {
-                        sender.input(AppMsg::MaybeHide);
-                    }
-                }
-            }
-            EntryAction::LaunchTerminal {
-                program,
-                arguments,
-                working_directory,
-            } => {
-                if let Some(emulator) = self.context.read().apps.terminal_emulator() {
-                    let mut command = Command::new(emulator.program());
-
-                    if let Some(working_directory) = working_directory
-                        && let Some(arg) = &emulator.terminal_args.dir
-                    {
-                        if arg.ends_with('=') {
-                            command.arg(format!("{arg}{}", working_directory.to_string_lossy()));
-                        } else {
-                            command.arg(arg);
-                            command.arg(working_directory);
-                        }
-                    }
-
-                    if let Some(program) = program {
-                        command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
-
-                        command.arg(program);
-                        command.args(arguments);
-                    }
-
-                    match command.spawn_detached() {
-                        Err(error) => println!(
-                            "Failed to start terminal {:?} {:?}",
-                            command.get_args(),
-                            error
-                        ),
-                        _ => sender.input(AppMsg::MaybeHide),
-                    }
-                }
-            }
-            EntryAction::Copy(value, _) => {
-                let mut opts = wl_clipboard_rs::copy::Options::new();
-                opts.foreground(true);
-                opts.copy(
-                    wl_clipboard_rs::copy::Source::Bytes(value.bytes().collect()),
-                    wl_clipboard_rs::copy::MimeType::Autodetect,
-                )
-                .expect("Failed to serve copy bytes");
-
-                sender.input(AppMsg::MaybeHide);
-            }
-            EntryAction::Shell(exec) => {
-                sender.input(AppMsg::MaybeHide);
-
-                Dispatch::call(DispatchType::Exec(exec)).unwrap();
-
-                // Command::new(shell.as_deref().unwrap_or("sh"))
-                //     .arg("-c")
-                //     .arg(exec)
-                //     .current_dir(
-                //         path.as_ref()
-                //             .filter(|x| x.exists())
-                //             .unwrap_or(&std::env::current_dir().unwrap()),
-                //     )
-                //     .exec();
-            }
-            EntryAction::Command {
-                command,
-                args,
-                path,
-                ..
-            } => {
-                sender.input(AppMsg::MaybeHide);
-
-                Command::new(command)
-                    .args(args)
-                    .current_dir(
-                        path.as_ref()
-                            .filter(|x| x.exists())
-                            .unwrap_or(&std::env::current_dir().unwrap()),
-                    )
-                    .spawn()
-                    .unwrap()
-                    .wait()
-                    .unwrap();
-            }
-            EntryAction::HyprctlExec(value) => {
-                Dispatch::call(DispatchType::Exec(value)).unwrap();
-                sender.input(AppMsg::MaybeHide);
+    fn execute_action(&self, action: &EntryAction, sender: AsyncComponentSender<Self>) {
+        match (action.function)(&mut self.context.write()) {
+            ActionResult::Ok => sender.input(AppMsg::MaybeHide),
+            ActionResult::Error => {}
+            ActionResult::SetText(text) => self.search_entry.emit(text),
+            ActionResult::SetPlugin(plugin) => {
+                sender.input(AppMsg::SetPlugin(plugin));
             }
         }
     }
@@ -776,21 +671,30 @@ const MASK_ICONS: [(ModifierType, &str); 4] = [
 ];
 
 fn create_actions_box(
-    actions: &[(EntryAction, gtk::gdk::Key, ModifierType)],
+    actions: &[EntryAction],
     index: usize,
-    context: &Context,
     sender: &AsyncComponentSender<AppModel>,
 ) -> GBox {
     let result = GBox::new(Orientation::Vertical, 0);
     result.add_css_class("actions_box");
 
-    for (i, (action, key, modifier)) in actions.iter().enumerate() {
+    for (
+        i,
+        EntryAction {
+            icon,
+            name,
+            key,
+            modifier,
+            ..
+        },
+    ) in actions.iter().enumerate()
+    {
         let action_box = GBox::default();
         action_box.add_css_class("action");
         action_box.set_class_active("selected", i == index);
 
         {
-            let icon = Image::from_icon_name(&action.icon(context));
+            let icon = Image::from_icon_name(icon);
             icon.set_pixel_size(24);
             icon.set_halign(Align::Start);
             icon.add_css_class("action_icon");
@@ -798,7 +702,7 @@ fn create_actions_box(
         }
 
         {
-            let label = Label::new(Some(&action.description()));
+            let label = Label::new(Some(name));
             label.set_halign(Align::Start);
             label.set_hexpand(true);
             label.add_css_class("action_name");
@@ -937,7 +841,7 @@ impl AsyncComponent for AppModel {
                             }
                             Key::BackSpace => {
                                 if is_empty {
-                                    sender.input(AppMsg::ClearPrefix);
+                                    sender.input(AppMsg::SetPlugin(None));
                                     return Propagation::Stop;
                                 }
                             }
@@ -1093,7 +997,6 @@ impl AsyncComponent for AppModel {
                         set_child: Some(&create_actions_box(
                             model.current_entry().map_or(&[], |x| &x.actions),
                             model.selected_action.unwrap_or(0),
-                            &model.context.read(),
                             &sender,
                         )),
                     },
@@ -1137,7 +1040,7 @@ impl AsyncComponent for AppModel {
                                     let sender = sender.clone();
                                     let selected_entry = model.selected_entry;
 
-                                    let button = widget_for_keybind(&x.0.description(), x.1, x.2);
+                                    let button = widget_for_keybind(&x.name, x.key, x.modifier);
                                     button.set_class_active("selected", model.pressing_entry);
                                     button.connect_clicked(move |_| {
                                         sender.input(AppMsg::Activate(selected_entry))
@@ -1440,8 +1343,8 @@ impl AsyncComponent for AppModel {
             AppMsg::Activate(index) => {
                 let entry = self.get_entry(index);
 
-                if let Some((action, _, _)) = entry.and_then(|x| x.actions.first()) {
-                    self.execute_action(&action.clone(), sender);
+                if let Some(action) = entry.and_then(|x| x.actions.first()) {
+                    self.execute_action(action, sender);
                 }
             }
             AppMsg::Shortcut(key, modifier) => {
@@ -1449,9 +1352,9 @@ impl AsyncComponent for AppModel {
                 let key = key.to_lower();
 
                 if let Some(entry) = entry {
-                    for (action, a_key, a_modifier) in &entry.actions {
-                        if key == *a_key && modifier == *a_modifier {
-                            self.execute_action(&action.clone(), sender);
+                    for action in &entry.actions {
+                        if key == action.key && modifier == action.modifier {
+                            self.execute_action(action, sender);
                             break;
                         }
                     }
@@ -1710,14 +1613,11 @@ impl AsyncComponent for AppModel {
                 }
             }
             AppMsg::ActivateSelectedWithAction(action) => {
-                let action = self.current_entry().map(|x| x.actions[action].clone());
+                let action = self.current_entry().map(|x| &x.actions[action]);
 
                 if let Some(action) = action {
-                    self.execute_action(&action.0, sender);
+                    self.execute_action(action, sender);
                 }
-            }
-            AppMsg::ClearPrefix => {
-                self.selected_plugin = None;
             }
             AppMsg::ScrollToSelected => {}
             AppMsg::ScrollToStart => {}
@@ -1758,6 +1658,13 @@ impl AsyncComponent for AppModel {
                     }
 
                     sender.input(AppMsg::Search(self.query.clone()));
+                }
+            }
+            AppMsg::SetPlugin(plugin) => {
+                self.selected_plugin = plugin;
+
+                if plugin.is_some() {
+                    self.search_entry.emit(String::new());
                 }
             }
             AppMsg::SetDragging(dragging) => {
@@ -1865,7 +1772,11 @@ fn plugin_entry_from_query(index: usize, x: &dyn Plugin, query: &str) -> Option<
         name: FormattedString::from_indices(x.name(), indices),
         description: Some("Plugin".into()),
         icon: EntryIcon::from(x.icon().map(str::to_owned)),
-        actions: vec![EntryAction::ChangePlugin(Some(index)).into()],
+        actions: vec![EntryAction {
+            name: "Open...".into(),
+            function: Box::new(move |_| ActionResult::SetPlugin(Some(index))),
+            ..Default::default()
+        }],
         score,
         ..Default::default()
     })

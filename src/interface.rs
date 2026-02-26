@@ -1,10 +1,14 @@
+use derivative::Derivative;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::ops::Range;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 use gtk::Image;
+use gtk::gdk::Key;
+use gtk::gdk::ModifierType;
 use gtk::pango::AttrColor;
 use gtk::pango::AttrFontDesc;
 use gtk::pango::AttrList;
@@ -12,6 +16,7 @@ use gtk::pango::Attribute;
 use gtk::pango::Color;
 use gtk::pango::FontDescription;
 
+use crate::utils::CommandExt;
 use crate::utils::IteratorExt;
 use crate::xdg_database::XdgAppDatabase;
 
@@ -32,80 +37,158 @@ pub trait Plugin: Debug + Send + Sync {
     fn select(&self, _entry: &Entry) {}
 }
 
-#[derive(Clone, Debug)]
-pub enum EntryAction {
-    Close,
-    Copy(String, Option<String>),
-    HyprctlExec(String),
-    Shell(String),
-    Command {
-        name: String,
-        icon: Option<String>,
-        command: String,
-        args: Vec<String>,
-        path: Option<PathBuf>,
-    },
-    LaunchTerminal {
-        program: Option<String>,
-        arguments: Vec<String>,
-        working_directory: Option<PathBuf>,
-    },
-    Write {
-        text: String,
-        description: String,
-        icon: String,
-    },
-    Open(String, Option<String>, Option<PathBuf>, Option<String>),
-    ChangePlugin(Option<usize>),
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct EntryAction {
+    pub icon: String,
+    pub name: String,
+    pub key: Key,
+    pub modifier: ModifierType,
+    #[derivative(Debug = "ignore")]
+    pub function: Box<ActionType>,
 }
 
 impl EntryAction {
-    pub fn description(&self) -> String {
-        match self {
-            EntryAction::Command { name, .. } => name.to_owned(),
-            EntryAction::Open(_, _, _, Some(s)) => s.to_owned(),
-            EntryAction::Open(_, None, None, _) => "Run application".to_owned(),
-            EntryAction::Open(_, Some(name), None, _) => name.to_owned(),
-            EntryAction::Open(_, _, Some(_), _) => "Open".to_owned(),
-            EntryAction::Copy(_, Some(s)) => s.to_owned(),
-            EntryAction::Copy(_, _) => "Copy".to_owned(),
-            EntryAction::LaunchTerminal { .. } => "Open terminal".to_owned(),
-            EntryAction::Write { description, .. } => description.to_owned(),
-            _ => "Run".to_owned(),
-        }
+    pub fn write(value: impl Into<String>) -> Box<ActionType> {
+        let value = value.into();
+        Box::new(move |_| ActionResult::SetText(value.clone()))
     }
 
-    pub fn icon(&self, context: &Context) -> String {
-        match self {
-            EntryAction::Command { icon, .. } => icon
-                .as_ref()
-                .map(|x| x.to_owned())
-                .unwrap_or("image-missing".to_owned()),
-            EntryAction::Close => "message-close".to_owned(),
-            EntryAction::Copy(_, _) => "edit-copy".to_owned(),
-            EntryAction::Open(app, _, _, _) => context
-                .apps
-                .app_map
-                .get(app)
-                .and_then(|x| x.icon.as_ref())
-                .map(|x| x.to_owned())
-                .unwrap_or("image-missing".to_owned()),
-            EntryAction::LaunchTerminal { .. } => "terminal".to_owned(),
-            EntryAction::Write { icon, .. } => icon.to_owned(),
-            _ => "image-missing".to_owned(),
+    pub fn copy(value: impl Into<String>) -> Box<ActionType> {
+        let value = value.into();
+
+        Box::new(move |_| {
+            let mut opts = wl_clipboard_rs::copy::Options::new();
+            opts.foreground(true);
+            opts.copy(
+                wl_clipboard_rs::copy::Source::Bytes(value.bytes().collect()),
+                wl_clipboard_rs::copy::MimeType::Autodetect,
+            )
+            .is_ok()
+            .into()
+        })
+    }
+
+    pub fn copy_bytes(value: &[u8]) -> Box<ActionType> {
+        let value: Box<[u8]> = value.into();
+
+        Box::new(move |_| {
+            let mut opts = wl_clipboard_rs::copy::Options::new();
+            opts.foreground(true);
+            opts.copy(
+                wl_clipboard_rs::copy::Source::Bytes(value.clone()),
+                wl_clipboard_rs::copy::MimeType::Autodetect,
+            )
+            .is_ok()
+            .into()
+        })
+    }
+
+    pub fn command(command: String, args: Vec<String>, path: Option<PathBuf>) -> Box<ActionType> {
+        Box::new(move |_| {
+            Command::new(&command)
+                .args(&args)
+                .current_dir(
+                    path.as_ref()
+                        .filter(|x| x.exists())
+                        .unwrap_or(&std::env::current_dir().unwrap()),
+                )
+                .spawn_detached()
+                .is_ok()
+                .into()
+        })
+    }
+
+    pub fn open(id: String, action: Option<String>, path: Option<PathBuf>) -> Box<ActionType> {
+        Box::new(move |context| {
+            if let Some(app) = context.apps.app_map.get(&id) {
+                let args = match &path {
+                    Some(path) => vec![path.to_string_lossy().to_string()],
+                    None => vec![],
+                };
+                match &action {
+                    Some(action) => context.apps.launch_action(app, action, &args),
+                    None => context.apps.launch(app, &args),
+                }
+            } else {
+                false
+            }
+            .into()
+        })
+    }
+
+    pub fn launch_terminal(
+        program: Option<String>,
+        arguments: Vec<String>,
+        working_directory: Option<PathBuf>,
+    ) -> Box<ActionType> {
+        Box::new(move |context| {
+            if let Some(emulator) = context.apps.terminal_emulator() {
+                let mut command = Command::new(emulator.program());
+
+                if let Some(working_directory) = &working_directory
+                    && let Some(arg) = &emulator.terminal_args.dir
+                {
+                    if arg.ends_with('=') {
+                        command.arg(format!("{arg}{}", working_directory.to_string_lossy()));
+                    } else {
+                        command.arg(arg);
+                        command.arg(working_directory);
+                    }
+                }
+
+                if let Some(program) = &program {
+                    command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
+
+                    command.arg(program);
+                    command.args(&arguments);
+                }
+
+                match command.spawn_detached() {
+                    Err(error) => {
+                        println!(
+                            "Failed to start terminal {:?} {:?}",
+                            command.get_args(),
+                            error
+                        );
+                        false
+                    }
+                    _ => true,
+                }
+            } else {
+                false
+            }
+            .into()
+        })
+    }
+}
+
+impl Default for EntryAction {
+    fn default() -> Self {
+        Self {
+            icon: "image-missing".into(),
+            name: "Run".into(),
+            key: Key::Return,
+            modifier: ModifierType::empty(),
+            function: Box::new(|_| ActionResult::Error),
         }
     }
 }
 
-impl From<EntryAction> for (EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType) {
-    fn from(value: EntryAction) -> Self {
-        (
-            value,
-            gtk::gdk::Key::Return,
-            gtk::gdk::ModifierType::NO_MODIFIER_MASK,
-        )
+pub enum ActionResult {
+    Ok,
+    Error,
+    SetText(String),
+    SetPlugin(Option<usize>),
+}
+
+impl From<bool> for ActionResult {
+    fn from(value: bool) -> Self {
+        if value { Self::Ok } else { Self::Error }
     }
 }
+
+pub type ActionType = dyn Fn(&mut Context) -> ActionResult + Send;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormatStyle {
@@ -273,14 +356,14 @@ impl<S: Into<String>> From<S> for FormattedString {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Entry {
     pub name: FormattedString,
     pub tag: Option<FormattedString>,
     pub description: Option<FormattedString>,
     pub icon: EntryIcon,
     pub small_icon: EntryIcon,
-    pub actions: Vec<(EntryAction, gtk::gdk::Key, gtk::gdk::ModifierType)>,
+    pub actions: Vec<EntryAction>,
     pub id: String,
     pub drag_file: Option<PathBuf>,
     pub score: u64,
@@ -335,12 +418,6 @@ impl From<Option<PathBuf>> for EntryIcon {
             None => Self::None,
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct SubEntry {
-    pub name: String,
-    pub action: EntryAction,
 }
 
 #[derive(Default)]

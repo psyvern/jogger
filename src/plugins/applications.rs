@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::fs::File;
 use std::io::BufRead;
 use std::path::PathBuf;
+use std::process::Command;
 
 use freedesktop_desktop_entry::{default_paths, get_languages_from_env};
 use fuzzy_matcher::FuzzyMatcher;
@@ -10,9 +11,10 @@ use gtk::gdk::{Key, ModifierType};
 use itertools::Itertools;
 use xdg::BaseDirectories;
 
-use crate::interface::{Context, FormattedString};
+use crate::interface::{ActionType, Context, EntryAction, FormattedString};
+use crate::utils::CommandExt;
 use crate::xdg_database::ExecParser;
-use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
+use crate::{Entry, Plugin, interface::EntryIcon};
 
 #[derive(Clone, Debug)]
 pub struct DesktopEntry {
@@ -31,6 +33,15 @@ pub struct DesktopEntry {
     pub(crate) mime_types: Vec<String>,
     pub display: bool,
     frequency: u32,
+}
+
+impl DesktopEntry {
+    pub fn icon(&self) -> &str {
+        match &self.icon {
+            Some(icon) => icon,
+            None => "image-missing",
+        }
+    }
 }
 
 impl PartialEq for DesktopEntry {
@@ -246,32 +257,48 @@ impl DesktopEntry {
             })
     }
 
-    fn get_actions(&self, desktop_file_opener: &str) -> Vec<(EntryAction, Key, ModifierType)> {
+    fn get_actions(&self, desktop_file_opener: &str) -> Vec<EntryAction> {
+        let icon = self.icon().to_owned();
+
         let mut vec = vec![
-            EntryAction::Open(self.id.clone(), None, None, None).into(),
-            (
-                EntryAction::Open(
+            EntryAction {
+                icon: icon.clone(),
+                name: "Run application".into(),
+                function: test(self.id.clone(), None, None),
+                ..Default::default()
+            },
+            EntryAction {
+                icon: "files".into(),
+                name: "Open location".into(),
+                key: Key::e,
+                modifier: ModifierType::CONTROL_MASK,
+                function: test(
                     desktop_file_opener.to_owned(),
                     None,
-                    Some(self.file_path.clone()),
-                    Some("Open location".into()),
+                    Some(self.file_path.to_owned()),
                 ),
-                Key::e,
-                ModifierType::CONTROL_MASK,
-            ),
-            (
-                EntryAction::Copy(self.id.clone(), Some("Copy app id".into())),
-                Key::c,
-                ModifierType::CONTROL_MASK,
-            ),
-            (
-                EntryAction::Copy(
-                    self.file_path.to_string_lossy().into(),
-                    Some("Copy location".into()),
-                ),
-                Key::c,
-                ModifierType::CONTROL_MASK | ModifierType::SHIFT_MASK,
-            ),
+            },
+            EntryAction {
+                icon: "terminal".into(),
+                name: "Open with terminal".into(),
+                key: Key::t,
+                modifier: ModifierType::CONTROL_MASK,
+                function: test2(self.id.clone(), None),
+            },
+            EntryAction {
+                icon: "edit-copy".into(),
+                name: "Copy app id".into(),
+                key: Key::c,
+                modifier: ModifierType::CONTROL_MASK,
+                function: EntryAction::copy(&self.id),
+            },
+            EntryAction {
+                icon: "edit-copy".into(),
+                name: "Copy location".into(),
+                key: Key::c,
+                modifier: ModifierType::CONTROL_MASK | ModifierType::SHIFT_MASK,
+                function: EntryAction::copy(self.file_path.to_string_lossy()),
+            },
         ];
         vec.extend(
             self.actions
@@ -288,17 +315,12 @@ impl DesktopEntry {
                     Key::_9,
                     Key::_0,
                 ])
-                .map(|(action, key)| {
-                    (
-                        EntryAction::Open(
-                            self.id.clone(),
-                            Some(action.id.clone()),
-                            None,
-                            Some(action.name.clone()),
-                        ),
-                        key,
-                        ModifierType::CONTROL_MASK,
-                    )
+                .map(|(action, key)| EntryAction {
+                    icon: icon.clone(),
+                    name: action.name.clone(),
+                    key,
+                    modifier: ModifierType::CONTROL_MASK,
+                    function: test(self.id.clone(), Some(action.id.clone()), None),
                 }),
         );
         vec
@@ -332,6 +354,13 @@ impl DesktopEntry {
             .and_then(|(kind, (score, indices))| {
                 let score = score.try_into().ok()?;
 
+                let actions = vec![EntryAction {
+                    icon: self.icon().into(),
+                    name: "Run action".into(),
+                    function: EntryAction::open(self.id.clone(), Some(action.id.clone()), None),
+                    ..Default::default()
+                }];
+
                 Some(match kind {
                     Kind::Name => (
                         3,
@@ -343,15 +372,7 @@ impl DesktopEntry {
                             small_icon: EntryIcon::Name(
                                 action.icon.clone().unwrap_or("emblem-added".into()),
                             ),
-                            actions: vec![
-                                EntryAction::Open(
-                                    self.id.clone(),
-                                    Some(action.id.clone()),
-                                    None,
-                                    None,
-                                )
-                                .into(),
-                            ],
+                            actions,
                             score,
                             ..Default::default()
                         },
@@ -366,15 +387,7 @@ impl DesktopEntry {
                             small_icon: EntryIcon::Name(
                                 action.icon.clone().unwrap_or("emblem-added".into()),
                             ),
-                            actions: vec![
-                                EntryAction::Open(
-                                    self.id.clone(),
-                                    Some(action.id.clone()),
-                                    None,
-                                    None,
-                                )
-                                .into(),
-                            ],
+                            actions,
                             score,
                             ..Default::default()
                         },
@@ -393,15 +406,7 @@ impl DesktopEntry {
                             small_icon: EntryIcon::Name(
                                 action.icon.clone().unwrap_or("emblem-added".into()),
                             ),
-                            actions: vec![
-                                EntryAction::Open(
-                                    self.id.clone(),
-                                    Some(action.id.clone()),
-                                    None,
-                                    None,
-                                )
-                                .into(),
-                            ],
+                            actions,
                             score,
                             ..Default::default()
                         },
@@ -420,15 +425,7 @@ impl DesktopEntry {
                             small_icon: EntryIcon::Name(
                                 action.icon.clone().unwrap_or("emblem-added".into()),
                             ),
-                            actions: vec![
-                                EntryAction::Open(
-                                    self.id.clone(),
-                                    Some(action.id.clone()),
-                                    None,
-                                    None,
-                                )
-                                .into(),
-                            ],
+                            actions,
                             score,
                             ..Default::default()
                         },
@@ -588,4 +585,71 @@ impl Plugin for Applications {
                 .collect()
         }
     }
+}
+
+fn test(app: String, action: Option<String>, path: Option<PathBuf>) -> Box<ActionType> {
+    Box::new(move |context| {
+        if let Some(app) = context.apps.app_map.get(&app) {
+            let args = match &path {
+                Some(path) => vec![path.to_string_lossy().to_string()],
+                None => vec![],
+            };
+            match &action {
+                Some(action) => context.apps.launch_action(app, action, &args),
+                None => context.apps.launch(app, &args),
+            }
+        } else {
+            false
+        }
+        .into()
+    })
+}
+
+fn test2(app: String, action: Option<String>) -> Box<ActionType> {
+    Box::new(move |context| {
+        if let Some(app) = context.apps.app_map.get(&app) {
+            // match &action {
+            //     Some(action) => context.apps.launch_action(app, action, &[]),
+            //     None => context.apps.launch(app, &[]),
+            // }
+
+            let exec = app.parse_exec(&[], false);
+
+            if exec.is_empty() {
+                println!("No program to start the app");
+                return false.into();
+            }
+
+            if let Some(emulator) = context.apps.terminal_emulator() {
+                let program = emulator.program();
+                let mut command = Command::new(&program);
+
+                if let Some(hold) = &emulator.terminal_args.hold {
+                    command.arg(hold);
+                }
+
+                command.arg(emulator.terminal_args.exec.as_deref().unwrap_or("-e"));
+
+                for part in exec {
+                    command.arg(part);
+                }
+
+                if let Some(working_directory) = &app.working_directory {
+                    command.current_dir(working_directory);
+                }
+
+                if let Err(error) = command.spawn_detached() {
+                    println!("Failed to start app {:?} {:?}", command.get_args(), error);
+                    return false.into();
+                }
+
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+        .into()
+    })
 }

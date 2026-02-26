@@ -100,7 +100,6 @@ impl Plugin for Ssh {
             .filter(move |x| x.name.contains(&query) || x.address.contains(&query))
             .map(|x| Entry {
                 name: FormattedString::plain(&x.name),
-                tag: None,
                 description: Some(FormattedString::plain(format!(
                     "{}{}{}",
                     x.user.clone().map(|x| x + "@").unwrap_or_default(),
@@ -108,16 +107,16 @@ impl Plugin for Ssh {
                     x.port.map(|x| format!(":{x}")).unwrap_or_default(),
                 ))),
                 icon: EntryIcon::Name("network-wired".to_owned()),
-                small_icon: EntryIcon::None,
-                actions: vec![
-                    EntryAction::LaunchTerminal {
-                        program: Some("ssh".to_owned()),
-                        arguments: vec![x.name.clone()],
-                        working_directory: None,
-                    }
-                    .into(),
-                ],
-                id: "".to_owned(),
+                actions: vec![EntryAction {
+                    icon: "network-wired".into(),
+                    name: "Connect".into(),
+                    function: EntryAction::launch_terminal(
+                        Some("ssh".into()),
+                        vec![x.name.clone()],
+                        None,
+                    ),
+                    ..Default::default()
+                }],
                 ..Default::default()
             })
             .collect()

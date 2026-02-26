@@ -76,6 +76,7 @@ list {
         .icon {
             -gtk-icon-shadow: 0 0 10px $surface;
             font-size: 40px;
+            line-height: 1em;
             font-weight: bold;
             font-family: monospace;
         }

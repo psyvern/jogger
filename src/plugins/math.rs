@@ -3,8 +3,10 @@ use std::time::Instant;
 use fend_core::SpanKind;
 use itertools::Itertools;
 
-use crate::interface::{Context, FormatStyle, FormattedString};
-use crate::{Entry, EntryAction, Plugin, interface::EntryIcon};
+use crate::{
+    Entry, Plugin,
+    interface::{Context, EntryAction, EntryIcon, FormatStyle, FormattedString},
+};
 
 #[derive(Debug)]
 pub struct Math {
@@ -85,15 +87,14 @@ impl Plugin for Math {
                 description: Some(FormattedString::plain(units)),
                 icon: EntryIcon::Name("accessories-calculator".to_string()),
                 small_icon: EntryIcon::None,
-                actions: vec![
-                    EntryAction::Copy(
-                        val.get_main_result()
-                            .trim_start_matches("approx. ")
-                            .to_owned(),
-                        None,
-                    )
-                    .into(),
-                ],
+                actions: vec![EntryAction {
+                    icon: "edit-copy".into(),
+                    name: "Copy".into(),
+                    function: EntryAction::copy(
+                        val.get_main_result().trim_start_matches("approx. "),
+                    ),
+                    ..Default::default()
+                }],
                 id: "".to_owned(),
                 ..Default::default()
             };

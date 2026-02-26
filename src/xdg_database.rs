@@ -511,6 +511,10 @@ impl XdgAppDatabase {
         self.app_map.values().find(|x| x.is_terminal_emulator())
     }
 
+    pub fn file_browser(&self) -> Option<&DesktopEntry> {
+        self.file_browser.as_ref().and_then(|x| self.app_map.get(x))
+    }
+
     pub fn launch(&self, app: &DesktopEntry, args: &[String]) -> bool {
         let exec = app.parse_exec(args, false);
 

@@ -6,6 +6,7 @@ use crate::interface::{
     Context, Entry, EntryAction, EntryIcon, FormatStyle, FormattedString, Plugin,
 };
 use crate::plugins::unicode::data::DATA;
+use gtk::gdk::ModifierType;
 
 #[derive(Debug)]
 pub struct Unicode {}
@@ -64,9 +65,12 @@ impl Plugin for Unicode {
                         FormatStyle::Highlight,
                     )),
                     icon: EntryIcon::Text(x.representation().to_string()),
-                    actions: vec![
-                        EntryAction::Copy(x.name.to_str_lossy().into_owned(), None).into(),
-                    ],
+                    actions: vec![EntryAction {
+                        icon: "edit-copy".into(),
+                        name: "Copy".into(),
+                        function: EntryAction::copy_bytes(x.name),
+                        ..Default::default()
+                    }],
                     ..Default::default()
                 });
 
@@ -75,18 +79,14 @@ impl Plugin for Unicode {
             let finder = bstr::Finder::new(&query);
 
             let iter2 = DATA.iter().flat_map(|x| {
-                if let Some(i) = finder.find(x.name) {
-                    Some(Entry {
-                        name: FormattedString {
+                let vals = if let Some(i) = finder.find(x.name) {
+                    Some((
+                        FormattedString {
                             text: titlecase(x.name),
                             ranges: vec![(FormatStyle::Highlight, i..(i + len))],
                         },
-                        tag: Some(FormattedString::plain(x.category.to_string())),
-                        description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
-                        icon: EntryIcon::Text(x.representation().to_string()),
-                        actions: vec![EntryAction::Copy(x.scalar.to_string(), None).into()],
-                        ..Default::default()
-                    })
+                        FormattedString::plain(x.category.to_string()),
+                    ))
                 } else if let Some((alias, i)) = x
                     .aliases
                     .iter()
@@ -94,20 +94,46 @@ impl Plugin for Unicode {
                     .flat_map(|x| finder.find(x).map(|i| (x, i)))
                     .next()
                 {
-                    Some(Entry {
-                        name: FormattedString::plain(titlecase(x.name)),
-                        tag: Some(FormattedString {
+                    Some((
+                        FormattedString::plain(titlecase(x.name)),
+                        FormattedString {
                             text: titlecase(alias),
                             ranges: vec![(FormatStyle::Highlight, i..(i + len))],
-                        }),
-                        description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
-                        icon: EntryIcon::Text(x.representation().to_string()),
-                        actions: vec![EntryAction::Copy(x.scalar.to_string(), None).into()],
-                        ..Default::default()
-                    })
+                        },
+                    ))
                 } else {
                     None
-                }
+                };
+
+                vals.map(|(name, tag)| Entry {
+                    name,
+                    tag: Some(tag),
+                    description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
+                    icon: EntryIcon::Text(x.representation().to_string()),
+                    actions: vec![
+                        EntryAction {
+                            icon: "edit-copy".into(),
+                            name: "Copy".into(),
+                            function: EntryAction::copy(x.scalar.to_string()),
+                            ..Default::default()
+                        },
+                        EntryAction {
+                            icon: "edit-copy".into(),
+                            name: "Copy codepoint".into(),
+                            modifier: ModifierType::SHIFT_MASK,
+                            function: EntryAction::copy(format!("{:X}", x.codepoint)),
+                            ..Default::default()
+                        },
+                        EntryAction {
+                            icon: "edit-copy".into(),
+                            name: "Copy name".into(),
+                            modifier: ModifierType::SHIFT_MASK,
+                            function: EntryAction::copy(titlecase(x.name)),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                })
             });
 
             return iter1.chain(iter2).take(128).collect();
@@ -124,7 +150,19 @@ impl Plugin for Unicode {
                         description: Some(FormattedString::plain(format!("{:04X}", x.codepoint))),
                         icon: EntryIcon::Text(x.representation().to_string()),
                         actions: vec![
-                            EntryAction::Copy(x.name.to_str_lossy().into_owned(), None).into(),
+                            EntryAction {
+                                icon: "edit-copy".into(),
+                                name: "Copy".into(),
+                                function: EntryAction::copy_bytes(x.name),
+                                ..Default::default()
+                            },
+                            EntryAction {
+                                icon: "edit-copy".into(),
+                                name: "Copy codepoint".into(),
+                                modifier: ModifierType::SHIFT_MASK,
+                                function: EntryAction::copy(format!("{:X}", x.codepoint)),
+                                ..Default::default()
+                            },
                         ],
                         ..Default::default()
                     })
