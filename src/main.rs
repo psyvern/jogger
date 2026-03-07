@@ -520,6 +520,7 @@ enum PluginType {
     Unicode,
     Emojis,
     Web,
+    Icons,
 }
 
 impl PluginType {
@@ -535,6 +536,7 @@ impl PluginType {
             Self::Unicode => Box::new(plugins::unicode::Unicode::new(context)),
             Self::Emojis => Box::new(plugins::emoji::Emojis::new(context)),
             Self::Web => Box::new(plugins::web::Web::new(context)),
+            Self::Icons => Box::new(plugins::icons::Icons::new(context)),
         }
     }
 }
@@ -1774,6 +1776,7 @@ fn plugin_entry_from_query(index: usize, x: &dyn Plugin, query: &str) -> Option<
         name: FormattedString::from_indices(x.name(), indices),
         description: Some("Plugin".into()),
         icon: EntryIcon::from(x.icon().map(str::to_owned)),
+        small_icon: EntryIcon::Name("plugins".into()),
         actions: vec![EntryAction {
             name: "Open...".into(),
             function: Box::new(move |_| ActionResult::SetPlugin(Some(index))),

@@ -4,6 +4,7 @@ pub(crate) mod commands;
 pub(crate) mod emoji;
 pub(crate) mod files;
 pub(crate) mod hyprland;
+pub(crate) mod icons;
 pub(crate) mod math;
 pub(crate) mod ssh;
 pub(crate) mod unicode;

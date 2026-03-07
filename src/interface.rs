@@ -6,15 +6,19 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
+use gtk::IconLookupFlags;
+use gtk::IconTheme;
 use gtk::Image;
 use gtk::gdk::Key;
 use gtk::gdk::ModifierType;
+use gtk::gio::prelude::FileExt;
 use gtk::pango::AttrColor;
 use gtk::pango::AttrFontDesc;
 use gtk::pango::AttrList;
 use gtk::pango::Attribute;
 use gtk::pango::Color;
 use gtk::pango::FontDescription;
+use itertools::Itertools;
 
 use crate::utils::CommandExt;
 use crate::utils::IteratorExt;
@@ -420,10 +424,48 @@ impl From<Option<PathBuf>> for EntryIcon {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
+pub struct SubEntry {
+    pub name: String,
+    pub action: EntryAction,
+}
+
 pub struct Context {
     messages: VecDeque<String>,
     pub apps: XdgAppDatabase,
+    pub icons: Vec<(String, String)>,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        let theme = IconTheme::for_display(
+            &gtk::gdk::Display::default().expect("Could not connect to a display."),
+        );
+
+        Self {
+            messages: Default::default(),
+            apps: Default::default(),
+            icons: theme
+                .icon_names()
+                .into_iter()
+                .flat_map(|x| {
+                    let path = theme
+                        .lookup_icon(
+                            &x,
+                            &[],
+                            96,
+                            1,
+                            gtk::TextDirection::None,
+                            IconLookupFlags::empty(),
+                        )
+                        .file()?
+                        .path()?;
+                    Some((x.to_string(), path.to_string_lossy().into_owned()))
+                })
+                .sorted()
+                .collect(),
+        }
+    }
 }
 
 impl Context {
