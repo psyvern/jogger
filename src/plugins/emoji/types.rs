@@ -1,6 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct UnicodeVersion {
     pub major: u16,
     pub minor: u16,
@@ -39,7 +39,6 @@ impl FromStr for UnicodeVersion {
 #[derive(Debug)]
 pub struct EmojiVariant {
     pub codepoints: &'static str,
-    pub version: UnicodeVersion,
     pub attributes: &'static [&'static str],
 }
 
@@ -48,5 +47,7 @@ pub struct Emoji {
     pub group: usize,
     pub subgroup: usize,
     pub description: &'static str,
+    pub tags: &'static [&'static str],
+    pub version: UnicodeVersion,
     pub variants: &'static [EmojiVariant],
 }

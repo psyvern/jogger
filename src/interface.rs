@@ -1,5 +1,6 @@
 use derivative::Derivative;
 use std::collections::VecDeque;
+use std::ffi::OsString;
 use std::fmt::Debug;
 use std::ops::Range;
 use std::path::Path;
@@ -442,6 +443,8 @@ impl Default for Context {
             &gtk::gdk::Display::default().expect("Could not connect to a display."),
         );
 
+        let name = OsString::from(theme.theme_name());
+
         Self {
             messages: Default::default(),
             apps: Default::default(),
@@ -460,7 +463,18 @@ impl Default for Context {
                         )
                         .file()?
                         .path()?;
-                    Some((x.to_string(), path.to_string_lossy().into_owned()))
+
+                    let parts = path.iter().skip_while(|x| *x != name).collect::<PathBuf>();
+                    let parts = parts.to_string_lossy();
+
+                    Some((
+                        x.into(),
+                        if parts.is_empty() {
+                            path.to_string_lossy().into()
+                        } else {
+                            format!("#{parts}")
+                        },
+                    ))
                 })
                 .sorted()
                 .collect(),
