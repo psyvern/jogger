@@ -10,6 +10,7 @@ use itertools::Itertools;
 use crate::interface::EntryAction;
 use crate::plugins::emoji::data::EMOJIS;
 use crate::plugins::emoji::data::GROUPS;
+use crate::plugins::emoji::data::SUBGROUPS;
 
 use crate::interface::{Context, Entry, EntryIcon, FormatStyle, FormattedString, Plugin};
 
@@ -95,13 +96,10 @@ impl Plugin for Emojis {
                     let last = ranges.last().map(|x| x.end).unwrap_or(0);
                     let last2 = subgroup_ranges.last().map(|x| x.end).unwrap_or(0);
 
-                    if let Some(index) = GROUPS[emoji.group].0[last..].to_lowercase().find(word) {
+                    if let Some(index) = GROUPS[emoji.group][last..].find(word) {
                         ranges.push(last + index..last + index + len);
                         true
-                    } else if let Some(index) = GROUPS[emoji.group].1[emoji.subgroup][last2..]
-                        .to_lowercase()
-                        .find(word)
-                    {
+                    } else if let Some(index) = SUBGROUPS[emoji.subgroup][last2..].find(word) {
                         subgroup_ranges.push(last2 + index..last2 + index + len);
                         true
                     } else {
@@ -174,14 +172,11 @@ impl Plugin for Emojis {
                         Some(FormattedString { text, ranges })
                     },
                     description: {
-                        let first_part = format!("{}  ·  ", GROUPS[x.group].0);
+                        let first_part = format!("{}  ·  ", titlecase(GROUPS[x.group]));
                         let len = first_part.len();
 
                         Some(FormattedString {
-                            text: format!(
-                                "{first_part}{}",
-                                titlecase(&GROUPS[x.group].1[x.subgroup].split('-').join(" "))
-                            ),
+                            text: format!("{first_part}{}", titlecase(SUBGROUPS[x.subgroup])),
                             ranges: group_ranges
                                 .into_iter()
                                 .map(|x| (FormatStyle::Highlight, x))
