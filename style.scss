@@ -33,12 +33,14 @@ window.dragging {
 }
 
 grid>*,
-list>* {
+listview>row>*>* {
     border-radius: 12px;
     border-width: 2px;
     border-style: solid;
     border-color: transparent;
+}
 
+grid>* {
     &:hover {
         background-color: $surfaceContainer;
     }
@@ -51,6 +53,19 @@ list>* {
     &:disabled:not(.selected) {
         opacity: 0.5;
     }
+}
+
+listview>row:hover>*>* {
+    background-color: $surfaceContainer;
+}
+
+listview>row:not(:selected):disabled>*>* {
+    opacity: 0.5;
+}
+
+listview>row:selected>*>* {
+    background-color: $surfaceContainerHigh;
+    border-color: $accent;
 }
 
 grid {
@@ -66,12 +81,10 @@ grid {
     }
 }
 
-list {
-    margin-top: 8px;
-
-    row {
+listview {
+    >row>*>* {
         padding: 12px;
-        margin: 0 8px 8px 8px;
+        margin: 4px 8px;
 
         .icon {
             -gtk-icon-shadow: 0 0 10px $surface;
@@ -84,6 +97,14 @@ list {
         .small_icon {
             -gtk-icon-shadow: 0px 0px 5px $surface;
         }
+    }
+
+    >row:first-child>*>* {
+        margin-top: 8px;
+    }
+
+    >row:last-child>*>* {
+        margin-bottom: 8px;
     }
 }
 

@@ -11,19 +11,20 @@ use dbus_crossroads::Crossroads;
 use fuzzy_matcher::FuzzyMatcher;
 use gtk::cairo::Region;
 use gtk::gdk::prelude::SurfaceExt;
-use gtk::gdk::{ContentProvider, Display, FileList, Key, ModifierType};
+use gtk::gdk::{self, ContentProvider, Display, FileList, Key, ModifierType};
 use gtk::glib::Propagation;
 use gtk::glib::translate::ToGlibPtr;
 use gtk::glib::value::ToValue;
 use gtk::prelude::{EventControllerExt, GestureSingleExt, NativeExt};
 use gtk::{
-    CenterBox, CssProvider, DragSource, EventControllerKey, GestureClick, IconTheme, Orientation,
-    PropagationPhase, Separator,
+    CenterBox, CssProvider, DragSource, EventControllerKey, GestureClick, IconTheme,
+    ListScrollFlags, ListView, Orientation, PropagationPhase, Separator,
 };
 use itertools::Itertools;
 use parking_lot::RwLock;
 use relm4::prelude::{AsyncComponent, AsyncComponentParts};
-use relm4::{AsyncComponentSender, view};
+use relm4::typed_view::list::{RelmListItem, TypedListView};
+use relm4::{AsyncComponentSender, RelmRemoveAllExt, view};
 use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
@@ -33,15 +34,11 @@ use std::time::Duration;
 use xdg::BaseDirectories;
 
 use gtk::{
-    Align, Box as GBox, Button, Grid, Image, Justification, Label, ListBox, ListBoxRow,
+    Align, Box as GBox, Button, Grid, Image, Justification, Label,
     Orientation::Vertical,
     Overlay, ScrolledWindow, Window,
-    gdk::{self},
     pango::EllipsizeMode,
-    prelude::{
-        AdjustmentExt, BoxExt, ButtonExt, EditableExt, GridExt, GtkWindowExt, ListBoxRowExt,
-        OrientableExt, WidgetExt,
-    },
+    prelude::{BoxExt, ButtonExt, EditableExt, GridExt, GtkWindowExt, OrientableExt, WidgetExt},
 };
 use gtk_layer_shell::{KeyboardMode, Layer, LayerShell};
 use interface::{Entry, Plugin};
@@ -224,230 +221,44 @@ impl FactoryComponent for GridEntryComponent {
     }
 }
 
-struct ListEntryComponent {
-    plugin: usize,
-    entry: Rc<Entry>,
-    selected: bool,
-    color: PangoColor,
-}
-
 fn create_drag_controller(
-    path: Option<impl AsRef<Path>>,
+    path: impl AsRef<Path>,
     icon: Option<&str>,
-    sender: FactorySender<ListEntryComponent>,
+    sender: AsyncComponentSender<AppModel>,
 ) -> DragSource {
     let drag_source = DragSource::new();
 
-    if let Some(path) = path {
-        let path_clone = path.as_ref().to_path_buf();
+    let path_clone = path.as_ref().to_path_buf();
 
-        drag_source.connect_prepare(move |_, _, _| {
-            let content = FileList::from_array(&[gtk::gio::File::for_path(&path_clone)]);
-            Some(ContentProvider::for_value(&content.to_value()))
-        });
+    drag_source.connect_prepare(move |_, _, _| {
+        let content = FileList::from_array(&[gtk::gio::File::for_path(&path_clone)]);
+        Some(ContentProvider::for_value(&content.to_value()))
+    });
 
-        if let Some(icon) = icon {
-            let theme = IconTheme::for_display(&Display::default().unwrap());
-            let icon = theme.lookup_icon(
-                icon,
-                &[],
-                48,
-                1,
-                gtk::TextDirection::Ltr,
-                gtk::IconLookupFlags::empty(),
-            );
-            drag_source.set_icon(Some(&icon), 0, 0);
-        }
-
-        let sender_clone = sender.clone();
-        drag_source.connect_drag_begin(move |_, _| {
-            sender_clone.output(EntryOutput::DragStart).unwrap();
-        });
-
-        let sender_clone = sender.clone();
-        drag_source.connect_drag_end(move |_, _, _| {
-            sender_clone.output(EntryOutput::DragEnd).unwrap();
-        });
+    if let Some(icon) = icon {
+        let theme = IconTheme::for_display(&Display::default().unwrap());
+        let icon = theme.lookup_icon(
+            icon,
+            &[],
+            48,
+            1,
+            gtk::TextDirection::Ltr,
+            gtk::IconLookupFlags::empty(),
+        );
+        drag_source.set_icon(Some(&icon), 0, 0);
     }
+
+    let sender_clone = sender.clone();
+    drag_source.connect_drag_begin(move |_, _| {
+        sender_clone.input(AppMsg::SetDragging(true));
+    });
+
+    let sender_clone = sender.clone();
+    drag_source.connect_drag_end(move |_, _, _| {
+        sender_clone.input(AppMsg::SetDragging(false));
+    });
 
     drag_source
-}
-
-#[relm4::factory]
-impl FactoryComponent for ListEntryComponent {
-    type Init = (usize, Rc<Entry>, PangoColor);
-    type Input = EntryMsg;
-    type Output = EntryOutput;
-    type CommandOutput = ();
-    type ParentWidget = ListBox;
-
-    view! {
-        #[root]
-        ListBoxRow {
-            #[watch]
-            set_class_active: ("selected", self.selected),
-            set_cursor_from_name: Some("pointer"),
-
-            connect_activate[sender] => move |_| {
-                sender.output(EntryOutput::Activate).unwrap()
-            },
-
-            add_controller = GestureClick {
-                connect_pressed[sender, index] => move |_, _, _, _| {
-                    sender.output(EntryOutput::ButtonDown(index.clone(), false)).unwrap();
-                },
-
-                connect_stopped[sender] => move |_| {
-                    sender.output(EntryOutput::StopGesture).unwrap();
-                },
-            },
-
-            add_controller = GestureClick {
-                set_button: gdk::BUTTON_SECONDARY,
-
-                connect_pressed[sender, index] => move |_, _, _, _| {
-                    sender.output(EntryOutput::ButtonDown(index.clone(), true)).unwrap();
-                },
-            },
-
-            add_controller: create_drag_controller(
-                self.entry.drag_file.as_ref(),
-                match &self.entry.icon {
-                    EntryIcon::Name(name) => Some(name),
-                    // EntryIcon::Path(path_buf) => todo!(),
-                    // EntryIcon::Character(_) => todo!(),
-                    _ => None,
-                },
-                sender,
-            ),
-
-            GBox {
-                set_orientation: Vertical,
-
-                GBox {
-                    Overlay {
-                        #[wrap(Some)]
-                        set_child = match &self.entry.icon {
-                            EntryIcon::Name(value) => {
-                                Image {
-                                    #[watch]
-                                    set_icon_name: Some(value),
-                                    set_use_fallback: true,
-                                    set_pixel_size: 48,
-                                    add_css_class: "icon",
-                                }
-                            },
-                            EntryIcon::Path(value) => {
-                                Image {
-                                    #[watch]
-                                    set_from_file: Some(value),
-                                    set_use_fallback: true,
-                                    set_pixel_size: 48,
-                                    add_css_class: "icon",
-                                }
-                            },
-                            EntryIcon::Text(value) => {
-                                Label {
-                                    #[watch]
-                                    set_label: &value,
-                                    add_css_class: "icon",
-                                }
-                            },
-                            EntryIcon::None => Image::new(),
-                        },
-
-                        add_overlay = &self.entry.small_icon.to_gtk_image() {
-                            set_use_fallback: true,
-                            set_pixel_size: 24,
-                            set_halign: Align::End,
-                            set_valign: Align::End,
-                            add_css_class: "icon",
-                            add_css_class: "small_icon",
-                        },
-                    },
-
-                    GBox {
-                        set_orientation: Vertical,
-                        set_valign: Align::Center,
-                        set_hexpand: true,
-                        add_css_class: "texts",
-
-                        GBox {
-                            Label {
-                                set_label: &self.entry.name.text,
-                                set_attributes: Some(&self.entry.name.to_attr_list(self.color.into())),
-                                set_ellipsize: EllipsizeMode::End,
-                                set_halign: Align::Start,
-                                add_css_class: "name",
-                            },
-
-                            match &self.entry.tag {
-                                Some(tag) => {
-                                    Label {
-                                        #[watch]
-                                        set_label: &tag.text,
-                                        #[watch]
-                                        set_attributes: Some(&tag.to_attr_list(self.color.into())),
-                                        set_ellipsize: EllipsizeMode::End,
-                                        set_halign: Align::End,
-                                        set_hexpand: true,
-                                        add_css_class: "tag",
-                                        set_lines: 1,
-                                    }
-                                }
-                                None => {
-                                    GBox {}
-                                }
-                            },
-
-                            // Label {
-                            //     #[watch]
-                            //     set_label: &format!("{}", self.entry.score),
-                            //     set_ellipsize: EllipsizeMode::End,
-                            //     set_halign: Align::End,
-                            //     add_css_class: "tag",
-                            //     set_lines: 1,
-                            // },
-                        },
-
-                        match &self.entry.description {
-                            Some(description) => {
-                                Label {
-                                    #[watch]
-                                    set_label: &description.text,
-                                    #[watch]
-                                    set_attributes: Some(&description.to_attr_list(self.color.into())),
-                                    set_ellipsize: EllipsizeMode::End,
-                                    set_halign: Align::Start,
-                                    add_css_class: "description",
-                                    set_lines: 1,
-                                }
-                            }
-                            None => {
-                                GBox {}
-                            }
-                        }
-                    },
-                },
-            },
-        }
-    }
-
-    fn init_model(value: Self::Init, index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
-        Self {
-            plugin: value.0,
-            entry: value.1,
-            selected: index.current_index() == 0,
-            color: value.2,
-        }
-    }
-
-    fn update(&mut self, message: Self::Input, _: FactorySender<Self>) {
-        match message {
-            EntryMsg::Select => self.selected = true,
-            EntryMsg::Unselect => self.selected = false,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -563,6 +374,233 @@ struct AppConfig {
     plugins: Vec<PluginConfig>,
 }
 
+struct TypedListWidgets {
+    name: Label,
+    description: CenterBox,
+    tag: CenterBox,
+    icon: Overlay,
+    small_icon: CenterBox,
+}
+
+struct TypedListEntry {
+    plugin: usize,
+    index: usize,
+    sender: AsyncComponentSender<AppModel>,
+    entry: Rc<Entry>,
+    color: PangoColor,
+}
+
+impl RelmListItem for TypedListEntry {
+    type Root = GBox;
+    type Widgets = TypedListWidgets;
+
+    fn setup(_: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
+        view! {
+            root = Self::Root {
+                set_cursor_from_name: Some("pointer"),
+
+                GBox {
+                    #[name = "icon"]
+                    Overlay {
+                        #[name = "small_icon"]
+                        add_overlay = &CenterBox {},
+                    },
+
+                    GBox {
+                        set_orientation: Vertical,
+                        set_valign: Align::Center,
+                        add_css_class: "texts",
+
+                        GBox {
+                            #[name = "name"]
+                            Label {
+                                set_ellipsize: EllipsizeMode::End,
+                                set_halign: Align::Start,
+                                add_css_class: "name",
+                            },
+
+                            #[name = "tag"]
+                            CenterBox {
+                                set_hexpand: true,
+                            }
+
+                            // Label {
+                            //     #[watch]
+                            //     set_label: &format!("{}", self.entry.score),
+                            //     set_ellipsize: EllipsizeMode::End,
+                            //     set_halign: Align::End,
+                            //     add_css_class: "tag",
+                            //     set_lines: 1,
+                            // },
+                        },
+
+                        #[name = "description"]
+                        CenterBox {}
+                    },
+                },
+            }
+        }
+
+        (
+            root,
+            Self::Widgets {
+                name,
+                description,
+                tag,
+                icon,
+                small_icon,
+            },
+        )
+    }
+
+    fn bind(&mut self, widgets: &mut Self::Widgets, root: &mut Self::Root) {
+        let Self::Widgets {
+            name,
+            description,
+            tag,
+            icon,
+            small_icon,
+        } = widgets;
+
+        let gesture = GestureClick::new();
+
+        let index = self.index;
+        let sender = self.sender.clone();
+        gesture.connect_pressed(move |_, _, _, _| {
+            sender.input(AppMsg::GestureStart(index, false));
+        });
+
+        let sender = self.sender.clone();
+        gesture.connect_stopped(move |_| {
+            sender.input(AppMsg::GestureStop);
+        });
+
+        let sender = self.sender.clone();
+        gesture.connect_released(move |_, _, _, _| {
+            sender.input(AppMsg::GestureRelease);
+        });
+
+        root.add_controller(gesture);
+
+        let gesture = GestureClick::new();
+        gesture.set_button(gdk::BUTTON_SECONDARY);
+
+        let index = self.index;
+        let sender = self.sender.clone();
+        gesture.connect_pressed(move |_, _, _, _| {
+            sender.input(AppMsg::GestureStart(index, true));
+        });
+
+        root.add_controller(gesture);
+
+        if let Some(path) = &self.entry.drag_file {
+            root.add_controller(create_drag_controller(
+                path,
+                match &self.entry.icon {
+                    EntryIcon::Name(name) => Some(name),
+                    // EntryIcon::Path(path_buf) => todo!(),
+                    // EntryIcon::Character(_) => todo!(),
+                    _ => None,
+                },
+                self.sender.clone(),
+            ));
+        }
+
+        let entry = &self.entry;
+        let color = self.color;
+
+        name.set_label(&entry.name.text);
+        name.set_attributes(Some(&entry.name.to_attr_list(color.into())));
+
+        description.set_start_widget(
+            entry
+                .description
+                .as_ref()
+                .map(|x| {
+                    let label = Label::new(None);
+
+                    label.set_label(&x.text);
+                    label.set_attributes(Some(&x.to_attr_list(color.into())));
+                    label.set_ellipsize(EllipsizeMode::End);
+                    label.set_halign(Align::Start);
+                    label.add_css_class("description");
+                    label.set_lines(1);
+
+                    label
+                })
+                .as_ref(),
+        );
+
+        tag.set_end_widget(
+            entry
+                .tag
+                .as_ref()
+                .map(|x| {
+                    let label = Label::new(None);
+
+                    label.set_label(&x.text);
+                    label.set_attributes(Some(&x.to_attr_list(color.into())));
+                    label.set_ellipsize(EllipsizeMode::End);
+                    label.set_halign(Align::End);
+                    label.set_hexpand(true);
+                    label.add_css_class("tag");
+                    label.set_lines(1);
+
+                    label
+                })
+                .as_ref(),
+        );
+
+        match &entry.icon {
+            EntryIcon::Name(value) => {
+                let image = Image::new();
+
+                image.set_icon_name(Some(value));
+                image.set_use_fallback(true);
+                image.set_pixel_size(48);
+                image.add_css_class("icon");
+
+                icon.set_child(Some(&image));
+            }
+            EntryIcon::Path(value) => {
+                let image = Image::new();
+
+                image.set_from_file(Some(value));
+                image.set_use_fallback(true);
+                image.set_pixel_size(48);
+                image.add_css_class("icon");
+
+                icon.set_child(Some(&image));
+            }
+            EntryIcon::Text(value) => {
+                let label = Label::new(None);
+
+                label.set_label(value);
+                label.add_css_class("icon");
+
+                icon.set_child(Some(&label));
+            }
+            EntryIcon::None => icon.remove_all(),
+        }
+
+        small_icon.set_end_widget(
+            match &entry.small_icon {
+                EntryIcon::Name(value) => Some(Image::from_icon_name(value)),
+                EntryIcon::Path(value) => Some(Image::from_file(value)),
+                _ => None,
+            }
+            .inspect(|x| {
+                x.set_use_fallback(true);
+                x.set_pixel_size(24);
+                x.set_align(Align::End);
+                x.add_css_class("icon");
+                x.add_css_class("small_icon");
+            })
+            .as_ref(),
+        );
+    }
+}
+
 struct AppModel {
     query: String,
     thread_handle: Option<stoppable_thread::StoppableHandle<()>>,
@@ -570,7 +608,7 @@ struct AppModel {
     selected_plugin: Option<usize>,
     selected_entry: usize,
     pressing_entry: bool,
-    list_entries: FactoryVecDeque<ListEntryComponent>,
+    list_entries_wrapper: TypedListView<TypedListEntry, gtk::SingleSelection>,
     grid_entries: FactoryVecDeque<GridEntryComponent>,
     grid_size: usize,
     search_entry: Controller<SearchEntryModel>,
@@ -589,15 +627,17 @@ impl AppModel {
         self.selected_plugin.is_none() && self.query.is_empty()
     }
 
-    fn current_entry(&self) -> Option<&Rc<Entry>> {
+    fn current_entry(&self) -> Option<Rc<Entry>> {
         self.get_entry(self.selected_entry)
     }
 
-    fn get_entry(&self, index: usize) -> Option<&Rc<Entry>> {
+    fn get_entry(&self, index: usize) -> Option<Rc<Entry>> {
         if self.use_grid() {
-            self.grid_entries.get(index).map(|x| &x.entry)
+            self.grid_entries.get(index).map(|x| x.entry.clone())
         } else {
-            self.list_entries.get(index).map(|x| &x.entry)
+            self.list_entries_wrapper
+                .get(index as u32)
+                .map(|x| x.borrow().entry.clone())
         }
     }
 
@@ -968,14 +1008,15 @@ impl AsyncComponent for AppModel {
                     } else {
                         scrolled_window = &ScrolledWindow {
                             #[local_ref]
-                            entries -> ListBox {
+                            my_view -> ListView {
                                 #[watch]
                                 set_sensitive: model.selected_action.is_none(),
+                            }
 
-                                connect_row_activated[sender] => move |_, row| {
-                                    sender.input(AppMsg::Activate(row.index() as usize));
-                                },
-                            },
+                            // #[local_ref]
+                            // entries -> ListBox {
+
+                            // },
                         }
                     },
 
@@ -999,7 +1040,7 @@ impl AsyncComponent for AppModel {
 
                         #[watch]
                         set_child: Some(&create_actions_box(
-                            model.current_entry().map_or(&[], |x| &x.actions),
+                            model.current_entry().as_ref().map_or(&[], |x| &x.actions),
                             model.selected_action.unwrap_or(0),
                             &sender,
                         )),
@@ -1039,6 +1080,7 @@ impl AsyncComponent for AppModel {
                         CenterBox {
                             #[watch]
                             set_end_widget: model.current_entry()
+                                .as_ref()
                                 .and_then(|x| x.actions.first())
                                 .map(|x| {
                                     let sender = sender.clone();
@@ -1080,9 +1122,10 @@ impl AsyncComponent for AppModel {
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
-        let list_entries = FactoryVecDeque::builder()
-            .launch(gtk::ListBox::default())
-            .forward(sender.input_sender(), EntryOutput::into);
+        let list_entries_wrapper = TypedListView::new();
+        // let list_entries = FactoryVecDeque::builder()
+        //     .launch(gtk::ListBox::default())
+        //     .forward(sender.input_sender(), EntryOutput::into);
 
         let grid_entries = FactoryVecDeque::<GridEntryComponent>::builder()
             .launch(Grid::default())
@@ -1103,7 +1146,7 @@ impl AsyncComponent for AppModel {
             selected_plugin: None,
             selected_entry: 0,
             pressing_entry: false,
-            list_entries,
+            list_entries_wrapper,
             grid_entries,
             grid_size,
             search_entry,
@@ -1117,7 +1160,7 @@ impl AsyncComponent for AppModel {
             locked: false,
         };
 
-        let entries = model.list_entries.widget();
+        let my_view = &model.list_entries_wrapper.view;
         let entries_grid = model.grid_entries.widget();
         let widgets = view_output!();
 
@@ -1168,52 +1211,6 @@ impl AsyncComponent for AppModel {
         });
 
         AsyncComponentParts { model, widgets }
-    }
-
-    async fn update_with_view(
-        &mut self,
-        widgets: &mut Self::Widgets,
-        message: Self::Input,
-        sender: AsyncComponentSender<Self>,
-        root: &Self::Root,
-    ) {
-        let scroll = matches!(message, AppMsg::ScrollToSelected);
-        let scroll2 = matches!(message, AppMsg::ScrollToStart);
-
-        self.update(message, sender.clone(), root).await;
-        self.update_view(widgets, sender);
-
-        if scroll {
-            let list = &widgets.entries;
-
-            if let Some(bounds) = list
-                .row_at_index(self.selected_entry as i32)
-                .and_then(|row| row.compute_bounds(list))
-            {
-                let scrolled = &widgets.scrolled_window;
-                let adj = scrolled.vadjustment();
-                if f64::from(bounds.y()) < adj.value() {
-                    adj.set_value(bounds.y().into());
-                } else if f64::from(bounds.y()) + f64::from(bounds.height())
-                    > adj.value() + adj.page_size()
-                {
-                    // additional vertical spacing of the list
-                    let spacing = 16.0;
-                    adj.set_value(
-                        f64::from(bounds.y()) + f64::from(bounds.height()) - adj.page_size()
-                            + spacing,
-                    );
-                }
-                scrolled.set_vadjustment(Some(&adj));
-            }
-        }
-
-        if scroll2 {
-            let scrolled = &widgets.scrolled_window;
-            let adj = scrolled.vadjustment();
-            adj.set_value(0.0);
-            scrolled.set_vadjustment(Some(&adj));
-        }
     }
 
     async fn update(
@@ -1347,7 +1344,7 @@ impl AsyncComponent for AppModel {
             AppMsg::Activate(index) => {
                 let entry = self.get_entry(index);
 
-                if let Some(action) = entry.and_then(|x| x.actions.first()) {
+                if let Some(action) = entry.as_ref().and_then(|x| x.actions.first()) {
                     self.execute_action(action, sender);
                 }
             }
@@ -1468,7 +1465,7 @@ impl AsyncComponent for AppModel {
                 if if use_grid {
                     self.grid_entries.is_empty()
                 } else {
-                    self.list_entries.is_empty()
+                    self.list_entries_wrapper.is_empty()
                 } {
                     return;
                 }
@@ -1477,7 +1474,7 @@ impl AsyncComponent for AppModel {
                     f(self.selected_entry as i32, self.grid_size as i32) as usize
                 };
                 let move_list = |f: fn(i32, i32) -> i32| -> usize {
-                    let size = self.list_entries.len() as i32;
+                    let size = self.list_entries_wrapper.len() as i32;
                     f(self.selected_entry as i32, size) as usize
                 };
                 let move_grid_back = || move_grid(|i, size| (i - 1).rem_euclid(size * size));
@@ -1576,14 +1573,17 @@ impl AsyncComponent for AppModel {
                         Some(())
                     });
                 } else {
-                    self.list_entries
-                        .try_send(self.selected_entry, EntryMsg::Unselect);
-                    self.list_entries.try_send(index, EntryMsg::Select);
+                    self.list_entries_wrapper
+                        .selection_model
+                        .set_selected(index as u32);
 
-                    self.list_entries.get(index).and_then(|entry| {
-                        self.plugins.read().get(entry.plugin)?.select(&entry.entry);
-                        Some(())
-                    });
+                    self.list_entries_wrapper
+                        .get(index as u32)
+                        .and_then(|entry| {
+                            let entry = entry.borrow();
+                            self.plugins.read().get(entry.plugin)?.select(&entry.entry);
+                            Some(())
+                        });
 
                     sender.input(AppMsg::ScrollToSelected);
                 }
@@ -1617,23 +1617,42 @@ impl AsyncComponent for AppModel {
                 }
             }
             AppMsg::ActivateSelectedWithAction(action) => {
-                let action = self.current_entry().map(|x| &x.actions[action]);
+                let entry = self.current_entry();
+                let action = entry.as_ref().map(|x| &x.actions[action]);
 
                 if let Some(action) = action {
                     self.execute_action(action, sender);
                 }
             }
-            AppMsg::ScrollToSelected => {}
-            AppMsg::ScrollToStart => {}
+            AppMsg::ScrollToSelected => {
+                self.list_entries_wrapper.view.scroll_to(
+                    self.selected_entry as u32,
+                    ListScrollFlags::empty(),
+                    None,
+                );
+            }
+            AppMsg::ScrollToStart => {
+                if !self.list_entries_wrapper.is_empty() {
+                    self.list_entries_wrapper
+                        .view
+                        .scroll_to(0, ListScrollFlags::empty(), None);
+                }
+            }
             AppMsg::SearchResults(entries) => {
                 self.loading = false;
 
-                let mut list_entries = self.list_entries.guard();
-                list_entries.clear();
+                self.list_entries_wrapper.clear();
+                self.list_entries_wrapper
+                    .extend_from_iter(entries.into_iter().enumerate().map(
+                        |(index, (plugin, entry))| TypedListEntry {
+                            plugin,
+                            index,
+                            entry: Rc::new(entry),
+                            color: self.config.highlight_color,
+                            sender: sender.clone(),
+                        },
+                    ));
 
-                for (a, b) in entries {
-                    list_entries.push_back((a, Rc::new(b), self.config.highlight_color));
-                }
                 sender.input(AppMsg::ScrollToStart);
             }
             AppMsg::PluginLoaded(plugin) => {
@@ -1673,6 +1692,7 @@ impl AsyncComponent for AppModel {
             }
             AppMsg::SetDragging(dragging) => {
                 self.dragging = dragging;
+
                 if let Some(surface) = root.surface() {
                     if dragging {
                         surface.set_input_region(&Region::create());
