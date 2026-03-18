@@ -535,6 +535,10 @@ impl Plugin for Applications {
         "Applications"
     }
 
+    fn icon(&self) -> Option<&str> {
+        Some("applications-all")
+    }
+
     fn search(&self, query: &str, context: &Context) -> Vec<Entry> {
         if query.is_empty() {
             context
